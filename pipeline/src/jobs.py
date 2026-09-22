@@ -1,0 +1,126 @@
+"""Job board probing: guess the board slug from the domain, try Ashby,
+Greenhouse, Lever public JSON APIs, take the first that responds."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from .fetch import Fetcher, domain_stem, normalize_name
+from .models import Company, JobPosting
+
+log = logging.getLogger(__name__)
+
+
+def slug_candidates(company: Company) -> list[str]:
+    candidates: list[str] = []
+    stem = domain_stem(company.domain)
+    if stem:
+        candidates.append(stem)
+        candidates.append(stem.replace("-", ""))
+    name_key = normalize_name(company.name)
+    if name_key:
+        candidates.append(name_key)
+        for suffix in ("inc", "labs", "hq", "ai", "app"):
+            if name_key.endswith(suffix) and len(name_key) > len(suffix) + 2:
+                candidates.append(name_key[: -len(suffix)])
+    # dedupe, preserve order
+    return list(dict.fromkeys(candidates))
+
+
+async def _try_ashby(fetcher: Fetcher, slug: str) -> list[JobPosting] | None:
+    resp = await fetcher.get(
+        f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
+    )
+    if resp is None:
+        return None
+    try:
+        jobs = resp.json().get("jobs", [])
+    except ValueError:
+        return None
+    return [
+        JobPosting(
+            title=j.get("title", ""),
+            url=j.get("jobUrl") or f"https://jobs.ashbyhq.com/{slug}/{j.get('id', '')}",
+            board="ashby",
+            department=(j.get("department") or {}).get("name")
+            if isinstance(j.get("department"), dict)
+            else j.get("department"),
+            location=(j.get("location") or {}).get("name")
+            if isinstance(j.get("location"), dict)
+            else j.get("location"),
+            description_text=j.get("descriptionPlain", "")[:4000],
+        )
+        for j in jobs
+    ]
+
+
+async def _try_greenhouse(fetcher: Fetcher, slug: str) -> list[JobPosting] | None:
+    resp = await fetcher.get(
+        f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true"
+    )
+    if resp is None:
+        return None
+    try:
+        jobs = resp.json().get("jobs", [])
+    except ValueError:
+        return None
+    return [
+        JobPosting(
+            title=j.get("title", ""),
+            url=j.get("absolute_url", ""),
+            board="greenhouse",
+            department=(j.get("departments") or [{}])[0].get("name")
+            if j.get("departments")
+            else None,
+            location=(j.get("location") or {}).get("name"),
+            description_text=j.get("content", "")[:4000],
+        )
+        for j in jobs
+    ]
+
+
+async def _try_lever(fetcher: Fetcher, slug: str) -> list[JobPosting] | None:
+    resp = await fetcher.get(f"https://api.lever.co/v0/postings/{slug}?mode=json")
+    if resp is None:
+        return None
+    try:
+        jobs = resp.json()
+    except ValueError:
+        return None
+    if not isinstance(jobs, list):
+        return None
+    return [
+        JobPosting(
+            title=j.get("text", ""),
+            url=j.get("hostedUrl", ""),
+            board="lever",
+            department=(j.get("categories") or {}).get("team"),
+            location=(j.get("categories") or {}).get("location"),
+            description_text=(j.get("descriptionPlain") or "")[:4000],
+        )
+        for j in jobs
+    ]
+
+
+_BOARDS = [_try_ashby, _try_greenhouse, _try_lever]
+
+
+async def fetch_jobs(company: Company, fetcher: Fetcher) -> list[JobPosting]:
+    for slug in slug_candidates(company):
+        for board in _BOARDS:
+            jobs = await board(fetcher, slug)
+            if jobs:
+                log.info("%s: %d jobs on %s (slug=%s)", company.name, len(jobs), board.__name__, slug)
+                return jobs
+    return []
+
+
+async def fetch_all_jobs(companies: list[Company]) -> None:
+    fetcher = Fetcher()
+    try:
+        results = await asyncio.gather(*(fetch_jobs(c, fetcher) for c in companies))
+    finally:
+        await fetcher.close()
+    for company, jobs in zip(companies, results):
+        company.jobs = jobs
