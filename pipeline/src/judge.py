@@ -154,6 +154,9 @@ def _company_state(company: Company) -> str:
         f"claimed round: {company.round.value}",
         f"amount raised: {company.amount_raised or 'unknown'}",
         f"raised date: {company.raised_date or 'unknown'}",
+        f"article title: {company.article_title or 'unknown'}",
+        f"article publication date: {company.article_published_at or 'unknown'}",
+        f"article funding extraction: {company.funding_evidence or 'unavailable'}",
         f"investors: {', '.join(company.investors) or 'unknown'}",
         f"open roles: {len(company.jobs)}",
     ]
@@ -164,6 +167,21 @@ def _company_state(company: Company) -> str:
     if company.news_snippets:
         lines.append("recent news: " + " | ".join(company.news_snippets[:5]))
     return "\n".join(lines)
+
+
+async def judge_new_round(company: Company) -> None:
+    questions = _questions(new_round=("noul", {"instructions": (
+        "Is this article announcing a new funding round for this company and "
+        "the claimed round, not referencing a past one? Judge the article's "
+        "funding extraction and supporting announcement quote, not whether "
+        "the company has ever raised. A historical/background round or an "
+        "article about a different company or different round is no. When "
+        "article evidence is unavailable or ambiguous, remain uncertain."
+    )}))
+    answer = (await backend().ask(_company_state(company), questions))["new_round"]
+    if not company.funding_evidence:
+        answer = Judgment("unknown", 0.0)
+    _record(company, "new_round", answer, company.source_url)
 
 
 async def judge_company(company: Company) -> None:

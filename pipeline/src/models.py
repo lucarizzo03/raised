@@ -45,6 +45,7 @@ class FundingExtraction(BaseModel):
     amount_raised: float | None = None  # USD
     raised_date: date | None = None
     investors: list[str] = Field(default_factory=list)
+    announcement_evidence: str = ""
 
 
 class JobPosting(BaseModel):
@@ -90,6 +91,10 @@ class Company(BaseModel):
     investors: list[str] = Field(default_factory=list)
     source_url: str
     article_title: str = ""
+    article_published_at: date | None = None
+    funding_evidence: str = ""
+    rejection_reason: str | None = None
+    rejection_detail: str | None = None
     id: int | None = None  # populated after DB upsert
 
     jobs: list[JobPosting] = Field(default_factory=list)

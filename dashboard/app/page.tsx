@@ -12,9 +12,9 @@ export default async function Page() {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-30 border-b border-border/70 bg-canvas/70 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1240px] items-center justify-between gap-4 px-6 py-3.5">
-          <div className="flex items-center gap-3">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-[13px] font-bold text-white">
+        <div className="mx-auto flex max-w-[1240px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3.5 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent text-[13px] font-bold text-white">
               R
             </span>
             <div>
@@ -27,7 +27,7 @@ export default async function Page() {
             </div>
           </div>
           <span
-            className="text-xs text-text-secondary"
+            className="w-full whitespace-nowrap pl-10 text-xs text-text-secondary sm:w-auto sm:shrink-0 sm:pl-0"
             title={exactTime(lastUpdated)}
           >
             {isSampleData
@@ -39,7 +39,7 @@ export default async function Page() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1240px] px-6 py-8">
+      <main className="mx-auto max-w-[1240px] px-4 py-6 sm:px-6 sm:py-8">
         <CompanyTable companies={companies} />
       </main>
     </div>

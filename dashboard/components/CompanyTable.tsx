@@ -26,7 +26,10 @@ type SortDir = "asc" | "desc";
 const TOP_N = 25;
 
 const fieldClass =
-  "h-9 rounded-md border border-border bg-surface px-3 text-text shadow-sm transition-all duration-200 hover:border-text-secondary/40 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25";
+  "h-9 min-w-0 rounded-md border border-border bg-surface px-3 text-sm leading-5 text-text shadow-sm transition-all duration-200 hover:border-text-secondary/40 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25";
+
+const actionButtonClass =
+  "inline-flex h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-sm border border-border bg-surface px-3 text-xs font-medium leading-none text-accent transition-all duration-200 hover:bg-hover active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
 
 export default function CompanyTable({ companies }: { companies: Company[] }) {
   const [roundFilter, setRoundFilter] = useState<Round | "">("");
@@ -109,19 +112,21 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
   }) {
     const active = sortKey === sortKeyName;
     return (
-      <th className={`py-3 pr-2 font-medium ${hideOnMobile ? "hidden md:table-cell" : ""}`}>
+      <th className={`w-24 py-3 pr-3 align-middle font-medium ${hideOnMobile ? "hidden md:table-cell" : ""}`}>
         <button
           type="button"
           onClick={() => toggleSort(sortKeyName)}
-          className="-mx-1.5 flex items-center gap-1 rounded-sm px-1.5 py-1 text-left transition-all duration-200 hover:bg-hover hover:text-text active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          className="-ml-1.5 flex h-8 items-center gap-1.5 whitespace-nowrap rounded-sm px-1.5 text-left leading-none transition-all duration-200 hover:bg-hover hover:text-text active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         >
           {label}
-          {active &&
-            (sortDir === "asc" ? (
-              <ChevronUp size={12} className="text-accent" />
-            ) : (
-              <ChevronDown size={12} className="text-accent" />
-            ))}
+          <span aria-hidden="true" className="flex h-3 w-3 shrink-0 items-center justify-center">
+            {active &&
+              (sortDir === "asc" ? (
+                <ChevronUp size={12} className="text-accent" />
+              ) : (
+                <ChevronDown size={12} className="text-accent" />
+              ))}
+          </span>
         </button>
       </th>
     );
@@ -129,21 +134,24 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4 text-sm">
-        <select
-          className={fieldClass}
-          value={roundFilter}
-          onChange={(e) => setRoundFilter(e.target.value as Round | "")}
-        >
-          <option value="">All rounds</option>
-          {ROUNDS.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
+      <div className="grid grid-cols-2 items-end gap-3 border-b border-border px-4 py-4 text-sm sm:px-5 md:flex md:flex-wrap md:gap-4">
+        <label className="flex min-w-0 flex-col gap-1.5 text-xs text-text-secondary md:w-40">
+          Round
+          <select
+            className={`${fieldClass} w-full`}
+            value={roundFilter}
+            onChange={(e) => setRoundFilter(e.target.value as Round | "")}
+          >
+            <option value="">All rounds</option>
+            {ROUNDS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </label>
 
-        <label className="flex items-center gap-2 text-text-secondary">
+        <label className="flex min-w-0 flex-col gap-1.5 text-xs text-text-secondary md:w-24">
           Min score
           <input
             type="number"
@@ -151,37 +159,39 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
             max={100}
             value={minScore}
             onChange={(e) => setMinScore(Number(e.target.value) || 0)}
-            className={`${fieldClass} w-20`}
+            className={`${fieldClass} w-full`}
           />
         </label>
 
-        <label className="flex cursor-pointer items-center gap-2 text-text-secondary">
-          <input
-            type="checkbox"
-            checked={needsReviewOnly}
-            onChange={(e) => setNeedsReviewOnly(e.target.checked)}
-            className="h-4 w-4 accent-accent"
-          />
-          Needs review only
-        </label>
+        <div className="col-span-2 flex min-w-0 items-center justify-between gap-2 sm:gap-3 md:contents">
+          <label className="flex h-9 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap text-xs text-text-secondary sm:text-sm">
+            <input
+              type="checkbox"
+              checked={needsReviewOnly}
+              onChange={(e) => setNeedsReviewOnly(e.target.checked)}
+              className="h-4 w-4 shrink-0 accent-accent"
+            />
+            Needs review only
+          </label>
 
-        <span className="ml-auto text-xs tabular-nums text-text-secondary">
-          Showing {visible.length} of {companies.length}
-        </span>
+          <span className="flex h-9 shrink-0 items-center whitespace-nowrap text-xs tabular-nums text-text-secondary md:ml-auto">
+            Showing {visible.length} of {companies.length}
+          </span>
+        </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[680px] border-collapse text-sm">
+      <div className="@container overflow-x-auto">
+        <table className="w-full min-w-[680px] table-fixed border-collapse text-sm md:min-w-[960px]">
           <thead>
-            <tr className="border-b border-border text-left text-xs text-text-secondary">
-              <th className="w-8 py-3 pl-5 pr-2 text-right font-medium">#</th>
-              <th className="py-3 pr-2 font-medium">Company</th>
+            <tr className="h-14 border-b border-border text-left text-xs leading-none text-text-secondary">
+              <th className="w-12 py-3 pl-4 pr-2 text-right align-middle font-medium sm:pl-5">#</th>
+              <th className="w-56 py-3 pr-3 align-middle font-medium lg:w-64">Company</th>
               <SortHeader label="Score" sortKeyName="score" />
-              <th className="py-3 pr-2 font-medium">Round</th>
+              <th className="w-24 whitespace-nowrap py-3 pr-3 align-middle font-medium">Round</th>
               <SortHeader label="Raised" sortKeyName="raised" hideOnMobile />
               <SortHeader label="Days ago" sortKeyName="days" hideOnMobile />
-              <th className="py-3 pr-2 font-medium">Signals</th>
-              <th className="w-9 py-3 pr-4" />
+              <th className="py-3 pr-3 align-middle font-medium">Signals</th>
+              <th className="w-12 py-3" />
             </tr>
           </thead>
           <tbody>
@@ -205,27 +215,27 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
                     role="button"
                     aria-expanded={isOpen}
                     aria-label={`${c.name}, score ${c.score}`}
-                    className={`group h-12 cursor-pointer border-b border-border transition-colors duration-200 hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50 ${
+                    className={`group h-14 cursor-pointer border-b border-border transition-colors duration-200 hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50 ${
                       isOpen ? "bg-hover" : ""
                     }`}
                   >
                     <td
-                      className={`py-2 pl-5 pr-2 text-right text-xs tabular-nums ${
+                      className={`py-2 pl-4 pr-2 text-right align-middle text-xs tabular-nums sm:pl-5 ${
                         isOpen ? "text-accent" : "text-text-secondary"
                       }`}
                     >
                       {rank}
                     </td>
-                    <td className="py-2 pr-2">
+                    <td className="py-2 pr-3 align-middle">
                       <div className="flex items-center gap-2.5">
                         <CompanyLogo domain={c.domain} name={c.name} size={24} verified={c.domainVerified} />
-                        <div>
-                          <div className="text-sm font-medium text-text">{c.name}</div>
-                          <div className="text-xs text-text-secondary">{c.domain}</div>
+                        <div className="min-w-0">
+                          <div className="break-words text-sm font-medium leading-5 text-text">{c.name}</div>
+                          <div className="truncate text-xs leading-4 text-text-secondary" title={c.domain ?? undefined}>{c.domain}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="py-2 pr-2">
+                    <td className="py-2 pr-3 align-middle">
                       <div className="text-base font-semibold tabular-nums text-text">
                         {c.score}
                       </div>
@@ -236,30 +246,32 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
                         />
                       </div>
                     </td>
-                    <td className="py-2 pr-2 text-text">{c.round}</td>
-                    <td className="hidden py-2 pr-2 tabular-nums text-text md:table-cell">
+                    <td className="whitespace-nowrap py-2 pr-3 align-middle text-text">{c.round}</td>
+                    <td className="hidden whitespace-nowrap py-2 pr-3 align-middle tabular-nums text-text md:table-cell">
                       {fmtAmount(c.amountRaised)}
                     </td>
-                    <td className="hidden py-2 pr-2 tabular-nums text-text md:table-cell">
+                    <td className="hidden whitespace-nowrap py-2 pr-3 align-middle tabular-nums text-text md:table-cell">
                       {days ?? "—"}
                     </td>
-                    <td className="py-2 pr-2">
+                    <td className="py-2 pr-3 align-middle">
                       <RowBadges badges={c.badges} />
                     </td>
-                    <td className="py-2 pr-4 text-right">
-                      <ChevronDown
-                        size={15}
-                        className={`ml-auto text-text-secondary/60 transition-all duration-300 ease-spring group-hover:text-text-secondary ${
-                          isOpen ? "rotate-180 text-accent" : ""
-                        }`}
-                      />
+                    <td className="px-2 py-2 text-center align-middle">
+                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-sm">
+                        <ChevronDown
+                          size={15}
+                          className={`text-text-secondary/60 transition-all duration-300 ease-spring group-hover:text-text-secondary ${
+                            isOpen ? "rotate-180 text-accent" : ""
+                          }`}
+                        />
+                      </span>
                     </td>
                   </tr>
                   {isMounted && (
                     <tr className="border-b border-border bg-canvas">
                       <td colSpan={8} className="p-0">
                         <Disclosure open={isOpen}>
-                          <div className="px-6 py-6">
+                          <div className="w-full max-w-[100cqw] px-4 py-6 sm:px-5">
                             <ExpandedRow company={c} />
                           </div>
                         </Disclosure>
@@ -280,11 +292,11 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
       )}
 
       {rows.length > TOP_N && (
-        <div className="border-t border-border px-5 py-3 text-center">
+        <div className="flex items-center justify-center border-t border-border px-4 py-3 sm:px-5">
           <button
             type="button"
             onClick={() => setShowAll((v) => !v)}
-            className="rounded-sm px-2 py-1 text-xs text-accent transition-all duration-200 hover:bg-hover active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className={`${actionButtonClass} min-w-36`}
           >
             {showAll ? `Show top ${TOP_N}` : `Show all (${rows.length})`}
           </button>
@@ -364,8 +376,8 @@ function ExpandedRow({ company }: { company: Company }) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-      <div>
+    <div className="grid min-w-0 grid-cols-1 gap-8 md:grid-cols-2">
+      <div className="min-w-0">
         <div className="flex items-center gap-3">
           <CompanyLogo
             domain={company.domain}
@@ -413,33 +425,37 @@ function ExpandedRow({ company }: { company: Company }) {
         </h3>
         <ul className="space-y-1.5 text-sm">
           {company.signals.map((s) => (
-            <li key={s.id} className="flex flex-wrap items-baseline gap-2">
-              <span className="text-text">{s.label}</span>
-              <span className="text-xs tabular-nums text-text-secondary">
+            <li key={s.id} className="grid grid-cols-[minmax(0,1fr)_2rem_3rem_2.5rem] items-start gap-x-2">
+              <span className="min-w-0 break-words py-0.5 text-text">{s.label}</span>
+              <span className="text-right text-xs leading-6 tabular-nums text-text-secondary">
                 {s.confidence.toFixed(2)}
               </span>
-              {s.needsReview && (
-                <span className="rounded-full bg-review-bg px-2 py-0.5 text-xs text-review-text">
-                  review
-                </span>
-              )}
-              {s.sourceUrl && (
-                <a
-                  href={s.sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="text-xs text-accent transition-opacity hover:opacity-70"
-                >
-                  source
-                </a>
-              )}
+              <span className="flex h-6 items-center justify-center">
+                {s.needsReview && (
+                  <span className="rounded-full bg-review-bg px-2 py-0.5 text-xs text-review-text">
+                    review
+                  </span>
+                )}
+              </span>
+              <span className="flex h-6 items-center justify-end">
+                {s.sourceUrl && (
+                  <a
+                    href={s.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex h-6 items-center text-xs text-accent transition-opacity hover:opacity-70"
+                  >
+                    source
+                  </a>
+                )}
+              </span>
             </li>
           ))}
         </ul>
       </div>
 
-      <div>
+      <div className="min-w-0">
         <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
           Investigation
         </h3>
@@ -456,21 +472,23 @@ function ExpandedRow({ company }: { company: Company }) {
           </ol>
         )}
 
-        <h3 className="mb-1.5 mt-5 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
-          Draft email
-        </h3>
-        <div className="relative rounded-md border border-border bg-surface p-4 pt-9 shadow-sm">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              copyEmail();
-            }}
-            className="absolute right-3 top-3 rounded-sm px-2 py-0.5 text-xs text-accent transition-all duration-200 hover:bg-hover active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-          >
-            {copied ? "Copied" : "Copy"}
-          </button>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-text">
+        <div className="mt-5 overflow-hidden rounded-md border border-border bg-surface shadow-sm">
+          <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border px-4 py-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
+              Draft email
+            </h3>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                copyEmail();
+              }}
+              className={`${actionButtonClass} min-w-20`}
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <p className="whitespace-pre-wrap break-words p-4 text-sm leading-relaxed text-text">
             {company.draftEmail}
           </p>
         </div>

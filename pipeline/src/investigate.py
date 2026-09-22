@@ -45,7 +45,7 @@ async def _fetch_about(company: Company, fetcher: Fetcher) -> None:
 async def _search_news(company: Company) -> None:
     query = quote(f'"{company.name}" funding OR hiring')
     url = (
-        f"https://news.google.com/rss/search?q={query}%20when%3A90d"
+        f"https://news.google.com/rss/search?q={query}%20when%3A{config.INGEST_WINDOW_DAYS}d"
         "&hl=en-US&gl=US&ceid=US:en"
     )
     feed = await asyncio.to_thread(feedparser.parse, url)

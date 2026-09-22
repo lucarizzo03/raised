@@ -1,4 +1,10 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
+
+async function bounds(locator: Locator) {
+  const rect = await locator.boundingBox();
+  expect(rect).not.toBeNull();
+  return rect!;
+}
 
 const runtimeErrors: string[] = [];
 
@@ -69,6 +75,73 @@ test("expands evidence, copies the draft, and toggles show all", async ({ page }
     await page.getByRole("button", { name: "Show top 25", exact: true }).click();
     await expect(rows).toHaveCount(count);
   }
+});
+
+test("aligns filter controls and keeps the brand square across viewport sizes", async ({ page }) => {
+  for (const width of [320, 390, 640, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const round = await bounds(page.getByRole("combobox"));
+    const score = await bounds(page.getByRole("spinbutton", { name: "Min score" }));
+    const review = await bounds(page.getByRole("checkbox", { name: "Needs review only" }).locator(".."));
+    const count = await bounds(page.getByText(/^Showing \d+ of \d+$/));
+    const mark = await bounds(page.locator("header span").filter({ hasText: /^R$/ }));
+    expect(Math.abs(round.y - score.y)).toBeLessThan(1);
+    expect(round.height).toBe(score.height);
+    expect(review.height).toBe(round.height);
+    expect(Math.abs(review.y + review.height / 2 - count.y - count.height / 2)).toBeLessThan(1);
+    expect(Math.abs(mark.width - mark.height)).toBeLessThan(1);
+    if (width < 768) expect(Math.abs(count.x + count.width - score.x - score.width)).toBeLessThan(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});
+
+test("keeps table columns in place when details are expanded and sorted", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const positions = () => page.locator("thead th").evaluateAll((cells) => cells.map((cell) => {
+    const { x, width } = cell.getBoundingClientRect();
+    return { x, width };
+  }));
+  const before = await positions();
+  await page.locator('tbody tr[role="button"]').first().click();
+  await expect(page.getByRole("heading", { name: "Why this score" })).toBeVisible();
+  expect(await positions()).toEqual(before);
+  await page.getByRole("button", { name: "Raised", exact: true }).click();
+  expect(await positions()).toEqual(before);
+  const sortButtons = await page.locator("thead button").evaluateAll((buttons) => buttons.map((button) => ({
+    height: button.getBoundingClientRect().height,
+    whitespace: getComputedStyle(button).whiteSpace,
+  })));
+  expect(new Set(sortButtons.map((button) => button.height)).size).toBe(1);
+  expect(sortButtons.every((button) => button.whitespace === "nowrap")).toBe(true);
+});
+
+test("aligns the copy button with its heading without shifting after copying", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.evaluate(() => Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: async () => {} },
+  }));
+  await page.locator('tbody tr[role="button"]').first().click();
+  const copy = page.getByRole("button", { name: /^(Copy|Copied)$/ });
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(copy).toBeVisible();
+    const button = await bounds(copy);
+    const heading = await bounds(page.getByRole("heading", { name: "Draft email", exact: true }));
+    const field = await bounds(page.getByRole("combobox"));
+    expect(Math.abs(button.y + button.height / 2 - heading.y - heading.height / 2)).toBeLessThan(1);
+    expect(button.height).toBe(field.height);
+    expect(button.x + button.width).toBeLessThanOrEqual(width);
+    const sources = await page.getByRole("link", { name: "source", exact: true }).evaluateAll((links) => links.map((link) => link.getBoundingClientRect().right));
+    expect(sources.length).toBeGreaterThan(0);
+    expect(Math.max(...sources) - Math.min(...sources)).toBeLessThan(1);
+  }
+  const before = await bounds(copy);
+  await copy.click();
+  await expect(copy).toHaveText("Copied");
+  const after = await bounds(copy);
+  expect(after.width).toBe(before.width);
+  expect(after.x).toBe(before.x);
 });
 
 test("remains usable on a narrow mobile viewport and after reload", async ({ page }) => {

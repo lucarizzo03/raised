@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date
+from datetime import date, timedelta
+from pathlib import Path
 
 import psycopg
+from psycopg.rows import dict_row
 
 from . import config
 from .models import Company
@@ -18,6 +20,62 @@ def get_conn() -> psycopg.Connection:
     if not config.DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set")
     return psycopg.connect(config.DATABASE_URL)
+
+
+def migrate() -> None:
+    migration = Path(__file__).resolve().parents[1] / "migrations" / "001_date_windows.sql"
+    with get_conn() as conn:
+        conn.execute(migration.read_text())
+        conn.execute(
+            "insert into pipeline_settings(singleton, display_window_days) values (true, %s) "
+            "on conflict (singleton) do update set display_window_days=excluded.display_window_days",
+            (config.DISPLAY_WINDOW_DAYS,),
+        )
+
+
+def backfill_completed() -> bool:
+    with get_conn() as conn:
+        return conn.execute("select backfill_completed_at is not null from pipeline_settings where singleton").fetchone()[0]
+
+
+def age_out(conn: psycopg.Connection, today: date) -> list[tuple]:
+    cutoff = today - timedelta(days=config.DISPLAY_WINDOW_DAYS)
+    return conn.execute(
+        "update companies set excluded=true, excluded_reason='aged out' "
+        "where raised_date < %s and (not excluded or excluded_reason is distinct from 'aged out') "
+        "returning id, name, raised_date", (cutoff,),
+    ).fetchall()
+
+
+def exclude_aged_out(today: date) -> list[tuple]:
+    with get_conn() as conn:
+        rows = age_out(conn, today)
+    log.info("aged out %d companies", len(rows))
+    return rows
+
+
+def load_existing() -> list[Company]:
+    with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+        rows = cur.execute("""
+            select c.id, c.name, c.domain, c.domain_verified, c.dedupe_key,
+                   coalesce(c.round, 'unknown') as round, c.amount_raised, c.raised_date,
+                   c.article_published_at, coalesce(c.article_title, '') as article_title,
+                   coalesce(c.funding_evidence, '') as funding_evidence,
+                   c.excluded, c.excluded_reason,
+                   coalesce(nullif(c.source_url, ''), (
+                       select s.source_url from signals s where s.company_id=c.id
+                       and s.signal_type in ('genuine_raise', 'is_startup', 'round', 'domain_unverified', 'sells_to', 'icp_fit')
+                       and s.source_url is not null and s.source_url <> '' order by s.id limit 1
+                   ), '') as source_url
+            from companies c order by c.id
+        """).fetchall()
+    return [Company.model_validate(row) for row in rows]
+
+
+def dashboard_summary() -> dict:
+    with get_conn() as conn:
+        count, oldest, newest = conn.execute("select count(*), min(raised_date), max(raised_date) from ranked_companies").fetchone()
+    return {"companies": count, "oldest_raise": str(oldest) if oldest else None, "newest_raise": str(newest) if newest else None}
 
 
 def known_dedupe_keys(conn: psycopg.Connection) -> set[str]:
@@ -32,8 +90,9 @@ def upsert_company(conn: psycopg.Connection, c: Company) -> int:
     row = conn.execute(
         """
         insert into companies (name, domain, domain_verified, dedupe_key, round,
-                               amount_raised, raised_date, excluded, excluded_reason)
-        values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                               amount_raised, raised_date, excluded, excluded_reason,
+                               article_published_at, source_url, article_title, funding_evidence)
+        values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         on conflict (dedupe_key) do update set
             name            = excluded.name,
             domain          = excluded.domain,
@@ -42,19 +101,49 @@ def upsert_company(conn: psycopg.Connection, c: Company) -> int:
             amount_raised   = excluded.amount_raised,
             raised_date     = excluded.raised_date,
             excluded        = excluded.excluded,
-            excluded_reason = excluded.excluded_reason
+            excluded_reason = excluded.excluded_reason,
+            article_published_at = excluded.article_published_at,
+            source_url      = excluded.source_url,
+            article_title   = excluded.article_title,
+            funding_evidence = excluded.funding_evidence
         returning id
         """,
         (c.name, c.domain, c.domain_verified, c.dedupe_key, c.round.value,
-         c.amount_raised, c.raised_date, c.excluded, c.excluded_reason),
+         c.amount_raised, c.raised_date, c.excluded, c.excluded_reason,
+         c.article_published_at, c.source_url, c.article_title, c.funding_evidence),
     ).fetchone()
     return row[0]
 
 
-def persist_run(companies: list[Company], run_date: date) -> None:
+def persist_run(companies: list[Company], run_date: date, *, backfill: bool = False, write_scores: bool = True) -> dict:
+    added = rejected = 0
     with get_conn() as conn, conn.transaction():
+        if backfill:
+            completed = conn.execute("select backfill_completed_at from pipeline_settings where singleton for update").fetchone()[0]
+            if completed is not None:
+                raise RuntimeError("The one-time backfill has already completed")
+        known = {row[0] for row in conn.execute("select dedupe_key from companies").fetchall()}
         for c in companies:
+            is_new = c.dedupe_key not in known
             c.id = upsert_company(conn, c)
+            known.add(c.dedupe_key)
+            if is_new and not c.rejection_reason:
+                added += 1
+            if c.rejection_reason:
+                rejected += 1
+                signal = next((s for s in reversed(c.signals) if s.signal_type == "new_round"), None)
+                confidence = 1.0 if c.rejection_reason == "stale" else (signal.confidence if signal else 0.0)
+                conn.execute("""
+                    insert into rejected_companies
+                        (company_id, name, reason, confidence, source_url, run_date,
+                         raised_date, article_published_at, details, snapshot)
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    on conflict (company_id, reason, run_date) do update set
+                        confidence=excluded.confidence, details=excluded.details,
+                        raised_date=excluded.raised_date, article_published_at=excluded.article_published_at,
+                        snapshot=excluded.snapshot
+                """, (c.id, c.name, c.rejection_reason, confidence, c.source_url, run_date,
+                       c.raised_date, c.article_published_at, c.rejection_detail, c.model_dump_json()))
             for s in c.signals:
                 conn.execute(
                     """
@@ -75,6 +164,8 @@ def persist_run(companies: list[Company], run_date: date) -> None:
                     (c.id, d.question, d.answer, d.confidence,
                      d.action_chosen, d.round, d.created_at),
                 )
+            if not write_scores or c.rejection_reason:
+                continue
             conn.execute(
                 """
                 insert into scores (company_id, score, explanation, rules_fired, run_date)
@@ -86,7 +177,11 @@ def persist_run(companies: list[Company], run_date: date) -> None:
                 """,
                 (c.id, c.score, c.explanation, json.dumps(c.rules_fired), run_date),
             )
-    log.info("persisted %d companies for run %s", len(companies), run_date)
+        aged = age_out(conn, run_date)
+        if backfill:
+            conn.execute("update pipeline_settings set backfill_completed_at=now(), backfill_added_count=%s where singleton", (added,))
+    log.info("persisted %d companies for run %s; added=%d rejected=%d aged_out=%d", len(companies), run_date, added, rejected, len(aged))
+    return {"added": added, "rejected": rejected, "aged_out": len(aged)}
 
 
 def fetch_ranked(run_date: date | None = None) -> list[dict]:
