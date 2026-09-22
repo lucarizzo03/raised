@@ -1,7 +1,14 @@
 import CompanyTable from "@/components/CompanyTable";
-import { companies } from "@/lib/mock-data";
+import { fetchDashboardData } from "@/lib/data";
+import { exactTime, relativeTime } from "@/lib/format";
 
-export default function Page() {
+// Always re-read Postgres so "last updated" and the ranking stay current.
+export const dynamic = "force-dynamic";
+
+export default async function Page() {
+  const { companies, lastUpdated, isSampleData } = await fetchDashboardData();
+  const relative = relativeTime(lastUpdated);
+
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-30 border-b border-border/70 bg-canvas/70 backdrop-blur-xl">
@@ -19,7 +26,16 @@ export default function Page() {
               </p>
             </div>
           </div>
-          <span className="text-xs text-text-secondary">Updated 3h ago</span>
+          <span
+            className="text-xs text-text-secondary"
+            title={exactTime(lastUpdated)}
+          >
+            {isSampleData
+              ? "Sample data"
+              : relative
+                ? `Updated ${relative}`
+                : "Never updated"}
+          </span>
         </div>
       </header>
 

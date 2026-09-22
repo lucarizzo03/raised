@@ -3,7 +3,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
-import type { Company, Round, Signal } from "@/lib/mock-data";
+import type { Badge, Company, Round } from "@/lib/types";
+import { daysAgo, fmtAmount } from "@/lib/format";
 import CompanyLogo from "./CompanyLogo";
 
 const ROUNDS: Round[] = ["Pre-seed", "Seed", "Series A", "Series B", "Later"];
@@ -21,16 +22,8 @@ const COLLAPSE_MS = 320;
 type SortKey = "score" | "raised" | "days";
 type SortDir = "asc" | "desc";
 
-function daysAgo(dateStr: string): number {
-  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000);
-}
-
-function fmtAmount(v: number): string {
-  const millions = v / 1_000_000;
-  const rounded = Math.round(millions * 10) / 10;
-  const text = rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1);
-  return `$${text}M`;
-}
+// Default list length; "Show all" lifts it.
+const TOP_N = 25;
 
 const fieldClass =
   "h-9 rounded-md border border-border bg-surface px-3 text-text shadow-sm transition-all duration-200 hover:border-text-secondary/40 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25";
@@ -43,6 +36,7 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [exiting, setExiting] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const exitTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -67,15 +61,18 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
         av = a.score;
         bv = b.score;
       } else if (sortKey === "raised") {
-        av = a.amountRaised;
-        bv = b.amountRaised;
+        av = a.amountRaised ?? -1;
+        bv = b.amountRaised ?? -1;
       } else {
-        av = daysAgo(a.raisedDate);
-        bv = daysAgo(b.raisedDate);
+        // Undated raises sort last in either direction.
+        av = daysAgo(a.raisedDate) ?? Number.MAX_SAFE_INTEGER;
+        bv = daysAgo(b.raisedDate) ?? Number.MAX_SAFE_INTEGER;
       }
       return (av - bv) * dir;
     });
   }, [companies, roundFilter, minScore, needsReviewOnly, sortKey, sortDir]);
+
+  const visible = showAll ? rows : rows.slice(0, TOP_N);
 
   function toggleRow(id: string) {
     if (exitTimer.current) window.clearTimeout(exitTimer.current);
@@ -169,7 +166,7 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
         </label>
 
         <span className="ml-auto text-xs tabular-nums text-text-secondary">
-          Showing {rows.length} of {companies.length}
+          Showing {visible.length} of {companies.length}
         </span>
       </div>
 
@@ -188,7 +185,7 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((c, i) => {
+            {visible.map((c, i) => {
               const isOpen = expanded === c.id;
               const isMounted = isOpen || exiting === c.id;
               const rank = i + 1;
@@ -221,7 +218,7 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
                     </td>
                     <td className="py-2 pr-2">
                       <div className="flex items-center gap-2.5">
-                        <CompanyLogo domain={c.domain} name={c.name} size={24} />
+                        <CompanyLogo domain={c.domain} name={c.name} size={24} verified={c.domainVerified} />
                         <div>
                           <div className="text-sm font-medium text-text">{c.name}</div>
                           <div className="text-xs text-text-secondary">{c.domain}</div>
@@ -244,10 +241,10 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
                       {fmtAmount(c.amountRaised)}
                     </td>
                     <td className="hidden py-2 pr-2 tabular-nums text-text md:table-cell">
-                      {days}
+                      {days ?? "—"}
                     </td>
                     <td className="py-2 pr-2">
-                      <RowSignals signals={c.signals} />
+                      <RowBadges badges={c.badges} />
                     </td>
                     <td className="py-2 pr-4 text-right">
                       <ChevronDown
@@ -281,6 +278,18 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
           No companies match these filters.
         </p>
       )}
+
+      {rows.length > TOP_N && (
+        <div className="border-t border-border px-5 py-3 text-center">
+          <button
+            type="button"
+            onClick={() => setShowAll((v) => !v)}
+            className="rounded-sm px-2 py-1 text-xs text-accent transition-all duration-200 hover:bg-hover active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          >
+            {showAll ? `Show top ${TOP_N}` : `Show all (${rows.length})`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -313,28 +322,25 @@ function Disclosure({ open, children }: { open: boolean; children: React.ReactNo
   );
 }
 
-function RowSignals({ signals }: { signals: Signal[] }) {
-  // Funding is already shown in the Round/Raised columns — repeating it as
-  // a badge here is redundant. Only needsReview signals get the pill
-  // treatment; everything else is plain text so the row reads instead of
-  // turning into a wall of chips.
-  const relevant = signals.filter((s) => s.type !== "funding");
-  const shown = relevant.slice(0, 3);
-  const hidden = relevant.length - shown.length;
+function RowBadges({ badges }: { badges: Badge[] }) {
+  // Findings only. Raise recency and round are deliberately absent - they
+  // already have their own columns. Order is set in lib/map.ts.
+  const shown = badges.slice(0, 3);
+  const hidden = badges.length - shown.length;
 
   return (
     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-      {shown.map((s) =>
-        s.needsReview ? (
+      {shown.map((b) =>
+        b.needsReview ? (
           <span
-            key={s.id}
+            key={b.id}
             className="rounded-full bg-review-bg px-2 py-0.5 text-xs text-review-text"
           >
-            {s.label} (review)
+            {b.label} (review)
           </span>
         ) : (
-          <span key={s.id} className="text-xs text-text-secondary">
-            {s.label}
+          <span key={b.id} className="text-xs text-text-secondary">
+            {b.label}
           </span>
         )
       )}
@@ -361,18 +367,27 @@ function ExpandedRow({ company }: { company: Company }) {
     <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
       <div>
         <div className="flex items-center gap-3">
-          <CompanyLogo domain={company.domain} name={company.name} size={40} />
+          <CompanyLogo
+            domain={company.domain}
+            name={company.name}
+            size={40}
+            verified={company.domainVerified}
+          />
           <div>
             <div className="text-sm font-medium text-text">{company.name}</div>
-            <a
-              href={`https://${company.domain}`}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="text-xs text-accent transition-opacity hover:opacity-70"
-            >
-              {company.domain}
-            </a>
+            {company.domain ? (
+              <a
+                href={`https://${company.domain}`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-xs text-accent transition-opacity hover:opacity-70"
+              >
+                {company.domain}
+              </a>
+            ) : (
+              <span className="text-xs text-text-secondary">domain unverified</span>
+            )}
           </div>
         </div>
         <p className="mt-3 text-sm leading-relaxed text-text">{company.explanation}</p>
@@ -408,15 +423,17 @@ function ExpandedRow({ company }: { company: Company }) {
                   review
                 </span>
               )}
-              <a
-                href={s.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="text-xs text-accent transition-opacity hover:opacity-70"
-              >
-                source
-              </a>
+              {s.sourceUrl && (
+                <a
+                  href={s.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-xs text-accent transition-opacity hover:opacity-70"
+                >
+                  source
+                </a>
+              )}
             </li>
           ))}
         </ul>

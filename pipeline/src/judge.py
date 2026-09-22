@@ -170,7 +170,35 @@ async def judge_company(company: Company) -> None:
     questions = _questions(
         genuine_raise=(
             "noul",
-            {"instructions": "Is this a genuine funding raise by the company?"},
+            {
+                # The original wording ("is this a genuine raise?") read as a
+                # request to authenticate the round, which cannot be done from
+                # these fields - it answered "no" to all 128 companies. Asking
+                # what the record describes discriminates properly.
+                "instructions": (
+                    "Do these fields describe a company that raised a venture "
+                    "funding round? Answer no only if the record clearly is not "
+                    "a company raising investment - for example a bar, "
+                    "restaurant, venue, event, product launch, or an incoherent "
+                    "record. A plausible company with a round and an amount is a yes."
+                )
+            },
+        ),
+        is_startup=(
+            "noul",
+            {"instructions": "Is this a venture-backed technology startup?"},
+        ),
+        sells_to=(
+            "choice",
+            {
+                "instructions": "Who does this company sell to?",
+                "criteria": {
+                    "B2B": "Sells primarily to businesses or other organizations",
+                    "B2C": "Sells primarily to individual consumers",
+                    "Both": "Sells meaningfully to both businesses and consumers",
+                    "Unclear": "Cannot tell from the available information",
+                },
+            },
         ),
         round=(
             "choice",
@@ -204,6 +232,8 @@ async def judge_company(company: Company) -> None:
     )
     answers = await backend().ask(_company_state(company), questions)
     _record(company, "genuine_raise", answers["genuine_raise"], company.source_url)
+    _record(company, "is_startup", answers["is_startup"], company.source_url)
+    _record(company, "sells_to", answers["sells_to"], company.source_url)
     rnd = _record(company, "round", answers["round"], company.source_url)
     if rnd.value in ROUND_LABELS:
         company.round = ROUND_LABELS[rnd.value]
@@ -326,9 +356,37 @@ def _record(
     return judgment
 
 
+def _latest(company: Company, signal_type: str) -> Signal | None:
+    hits = [s for s in company.signals if s.signal_type == signal_type]
+    return hits[-1] if hits else None
+
+
+def gate_reason(company: Company) -> str | None:
+    """Fix 2 drop rule. Returns a reason to reject, or None to keep.
+
+    A confident "no" on either gate drops the company. An unconfident answer
+    keeps it and leaves the needs_review flag that _record already set.
+    """
+    for signal_type, label in (
+        ("genuine_raise", "not a funding raise"),
+        ("is_startup", "not a venture-backed technology startup"),
+    ):
+        sig = _latest(company, signal_type)
+        if sig and sig.value.startswith("no") and sig.confidence >= config.CONFIDENCE_REVIEW_THRESHOLD:
+            return f"{label} ({signal_type}=no, confidence {sig.confidence:.2f})"
+    return None
+
+
 async def judge_all(companies: list[Company]) -> None:
     """Company + job judgments in parallel; founder judgments need about pages."""
     await asyncio.gather(*(judge_company(c) for c in companies))
     await asyncio.gather(
         *(judge_job(c, j) for c in companies for j in c.jobs)
     )
+    rejected = [c for c in companies if gate_reason(c)]
+    log.info(
+        "gate: evaluated %d companies, rejected %d, kept %d",
+        len(companies), len(rejected), len(companies) - len(rejected),
+    )
+    for c in rejected:
+        log.info("  rejected %s: %s", c.name, gate_reason(c))

@@ -32,6 +32,7 @@ class FeedItem(BaseModel):
     published: date | None = None
     source: str  # techcrunch | google_news | sec_edgar
     text: str = ""
+    html: str = ""  # kept so domain links can be harvested from the body
 
 
 class FundingExtraction(BaseModel):
@@ -80,6 +81,8 @@ class Company(BaseModel):
 
     name: str
     domain: str | None = None
+    domain_verified: bool = False  # homepage fetched and name confirmed
+    domain_source: str = "none"   # provenance, for the audit trail
     dedupe_key: str
     round: Round = Round.UNKNOWN
     amount_raised: float | None = None
@@ -99,3 +102,5 @@ class Company(BaseModel):
     score: int = 0
     rules_fired: list[str] = Field(default_factory=list)
     explanation: str = ""
+    excluded: bool = False
+    excluded_reason: str | None = None

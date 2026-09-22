@@ -57,13 +57,17 @@ class Fetcher:
                 return None
 
     async def get_text(self, url: str, **kwargs) -> str:
+        return (await self.get_text_html(url, **kwargs))[0]
+
+    async def get_text_html(self, url: str, **kwargs) -> tuple[str, str]:
+        """(text, raw_html). The html is kept so links can be harvested."""
         resp = await self.get(url, **kwargs)
         if resp is None:
-            return ""
+            return "", ""
         content_type = resp.headers.get("content-type", "")
         if "html" in content_type or "xml" in content_type or not content_type:
-            return html_to_text(resp.text)
-        return resp.text[: config.ARTICLE_TEXT_LIMIT]
+            return html_to_text(resp.text), resp.text
+        return resp.text[: config.ARTICLE_TEXT_LIMIT], ""
 
 
 def normalize_domain(raw: str | None) -> str | None:
