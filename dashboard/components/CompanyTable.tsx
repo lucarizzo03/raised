@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 import type { Company, Round, Signal } from "@/lib/mock-data";
@@ -13,6 +13,10 @@ const ACTION_LABELS: Record<string, string> = {
   search_news: "searched news",
   fetch_about: "fetched about page",
 };
+
+// Matches the disclosure transition below; the exiting row unmounts once the
+// collapse has finished playing.
+const COLLAPSE_MS = 320;
 
 type SortKey = "score" | "raised" | "days";
 type SortDir = "asc" | "desc";
@@ -29,7 +33,7 @@ function fmtAmount(v: number): string {
 }
 
 const fieldClass =
-  "h-9 rounded-md border border-border bg-surface px-3 text-text shadow-sm transition-colors hover:border-text-secondary/40 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20";
+  "h-9 rounded-md border border-border bg-surface px-3 text-text shadow-sm transition-all duration-200 hover:border-text-secondary/40 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25";
 
 export default function CompanyTable({ companies }: { companies: Company[] }) {
   const [roundFilter, setRoundFilter] = useState<Round | "">("");
@@ -38,6 +42,14 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [exiting, setExiting] = useState<string | null>(null);
+  const exitTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (exitTimer.current) window.clearTimeout(exitTimer.current);
+    };
+  }, []);
 
   const rows = useMemo(() => {
     const filtered = companies.filter((c) => {
@@ -65,6 +77,21 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
     });
   }, [companies, roundFilter, minScore, needsReviewOnly, sortKey, sortDir]);
 
+  function toggleRow(id: string) {
+    if (exitTimer.current) window.clearTimeout(exitTimer.current);
+
+    if (expanded === id) {
+      // Keep the panel mounted so the collapse can animate out.
+      setExpanded(null);
+      setExiting(id);
+      exitTimer.current = window.setTimeout(() => setExiting(null), COLLAPSE_MS);
+      return;
+    }
+
+    setExpanded(id);
+    setExiting(null);
+  }
+
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -89,7 +116,7 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
         <button
           type="button"
           onClick={() => toggleSort(sortKeyName)}
-          className="-mx-1.5 flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-left transition-colors hover:bg-hover hover:text-text"
+          className="-mx-1.5 flex items-center gap-1 rounded-sm px-1.5 py-1 text-left transition-all duration-200 hover:bg-hover hover:text-text active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         >
           {label}
           {active &&
@@ -131,23 +158,23 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
           />
         </label>
 
-        <label className="flex items-center gap-2 text-text-secondary">
+        <label className="flex cursor-pointer items-center gap-2 text-text-secondary">
           <input
             type="checkbox"
             checked={needsReviewOnly}
             onChange={(e) => setNeedsReviewOnly(e.target.checked)}
-            className="h-4 w-4 accent-[#ff6600]"
+            className="h-4 w-4 accent-accent"
           />
           Needs review only
         </label>
 
-        <span className="ml-auto text-xs text-text-secondary">
+        <span className="ml-auto text-xs tabular-nums text-text-secondary">
           Showing {rows.length} of {companies.length}
         </span>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] border-collapse text-sm">
+        <table className="w-full min-w-[680px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs text-text-secondary">
               <th className="w-8 py-3 pl-5 pr-2 text-right font-medium">#</th>
@@ -156,24 +183,40 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
               <th className="py-3 pr-2 font-medium">Round</th>
               <SortHeader label="Raised" sortKeyName="raised" hideOnMobile />
               <SortHeader label="Days ago" sortKeyName="days" hideOnMobile />
-              <th className="py-3 pr-5 font-medium">Signals</th>
+              <th className="py-3 pr-2 font-medium">Signals</th>
+              <th className="w-9 py-3 pr-4" />
             </tr>
           </thead>
           <tbody>
             {rows.map((c, i) => {
               const isOpen = expanded === c.id;
+              const isMounted = isOpen || exiting === c.id;
               const rank = i + 1;
               const days = daysAgo(c.raisedDate);
 
               return (
                 <Fragment key={c.id}>
                   <tr
-                    onClick={() => setExpanded(isOpen ? null : c.id)}
-                    className={`h-12 cursor-pointer border-b border-border transition-colors hover:bg-hover ${
-                      isOpen ? "bg-hover border-l-2 border-l-accent" : ""
+                    onClick={() => toggleRow(c.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggleRow(c.id);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-expanded={isOpen}
+                    aria-label={`${c.name}, score ${c.score}`}
+                    className={`group h-12 cursor-pointer border-b border-border transition-colors duration-200 hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50 ${
+                      isOpen ? "bg-hover" : ""
                     }`}
                   >
-                    <td className="py-2 pl-5 pr-2 text-right text-xs text-text-secondary tabular-nums">
+                    <td
+                      className={`py-2 pl-5 pr-2 text-right text-xs tabular-nums ${
+                        isOpen ? "text-accent" : "text-text-secondary"
+                      }`}
+                    >
                       {rank}
                     </td>
                     <td className="py-2 pr-2">
@@ -186,10 +229,12 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
                       </div>
                     </td>
                     <td className="py-2 pr-2">
-                      <div className="text-base font-semibold tabular-nums text-text">{c.score}</div>
-                      <div className="mt-1.5 h-1.5 w-16 rounded-full bg-border">
+                      <div className="text-base font-semibold tabular-nums text-text">
+                        {c.score}
+                      </div>
+                      <div className="mt-1.5 h-1.5 w-16 overflow-hidden rounded-full bg-border">
                         <div
-                          className="h-1.5 rounded-full bg-accent"
+                          className="h-1.5 rounded-full bg-accent transition-[width] duration-500 ease-spring"
                           style={{ width: `${Math.min(100, Math.max(0, c.score))}%` }}
                         />
                       </div>
@@ -201,16 +246,26 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
                     <td className="hidden py-2 pr-2 tabular-nums text-text md:table-cell">
                       {days}
                     </td>
-                    <td className="py-2 pr-5">
+                    <td className="py-2 pr-2">
                       <RowSignals signals={c.signals} />
                     </td>
+                    <td className="py-2 pr-4 text-right">
+                      <ChevronDown
+                        size={15}
+                        className={`ml-auto text-text-secondary/60 transition-all duration-300 ease-spring group-hover:text-text-secondary ${
+                          isOpen ? "rotate-180 text-accent" : ""
+                        }`}
+                      />
+                    </td>
                   </tr>
-                  {isOpen && (
-                    <tr className="border-b border-border border-l-2 border-l-accent bg-canvas">
-                      <td colSpan={7} className="p-6">
-                        <div className="animate-reveal">
-                          <ExpandedRow company={c} />
-                        </div>
+                  {isMounted && (
+                    <tr className="border-b border-border bg-canvas">
+                      <td colSpan={8} className="p-0">
+                        <Disclosure open={isOpen}>
+                          <div className="px-6 py-6">
+                            <ExpandedRow company={c} />
+                          </div>
+                        </Disclosure>
                       </td>
                     </tr>
                   )}
@@ -222,10 +277,38 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
       </div>
 
       {rows.length === 0 && (
-        <p className="py-10 text-center text-sm text-text-secondary">
+        <p className="animate-rise py-12 text-center text-sm text-text-secondary">
           No companies match these filters.
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Height-animated disclosure. The 0fr -> 1fr grid row transition is the one
+ * way to animate to an unknown content height without measuring it, so the
+ * panel opens and closes on the same spring curve as the chevron.
+ */
+function Disclosure({ open, children }: { open: boolean; children: React.ReactNode }) {
+  const [entered, setEntered] = useState(false);
+
+  useEffect(() => {
+    // One frame at 0fr before flipping, otherwise it mounts fully open and
+    // there is nothing to transition from.
+    const id = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const show = open && entered;
+
+  return (
+    <div
+      className={`grid transition-all duration-[320ms] ease-spring ${
+        show ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+      }`}
+    >
+      <div className="overflow-hidden">{children}</div>
     </div>
   );
 }
@@ -366,7 +449,7 @@ function ExpandedRow({ company }: { company: Company }) {
               e.stopPropagation();
               copyEmail();
             }}
-            className="absolute right-3 top-3 rounded-sm px-1.5 py-0.5 text-xs text-accent transition-colors hover:bg-hover"
+            className="absolute right-3 top-3 rounded-sm px-2 py-0.5 text-xs text-accent transition-all duration-200 hover:bg-hover active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           >
             {copied ? "Copied" : "Copy"}
           </button>
