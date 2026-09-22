@@ -5,6 +5,9 @@ create table if not exists companies (
     id            bigint generated always as identity primary key,
     name          text not null,
     domain        text unique,               -- normalized: lowercase, no www/path
+    domain_verified boolean not null default false,  -- homepage fetched, name confirmed
+    excluded        boolean not null default false,  -- kept on record, hidden from the dashboard
+    excluded_reason text,
     dedupe_key    text not null unique,      -- domain, or normalized name fallback
     round         text,
     amount_raised numeric,
@@ -47,16 +50,35 @@ create table if not exists decisions (
 );
 create index if not exists decisions_company_idx on decisions(company_id);
 
+create table if not exists rejected_companies (
+    id         bigint generated always as identity primary key,
+    name       text not null,
+    reason     text not null,
+    confidence double precision not null,
+    source_url text,
+    run_date   date not null,
+    rejected_at timestamptz not null default now()
+);
+create index if not exists rejected_run_idx on rejected_companies(run_date);
+
+-- Added after the first run; safe to re-run.
+alter table companies add column if not exists domain_verified boolean not null default false;
+alter table companies add column if not exists excluded boolean not null default false;
+alter table companies add column if not exists excluded_reason text;
+
 -- Dashboard ranking: each company's most recent score. Companies are only
 -- judged once (dedupe skips known ones on later runs), so filtering to the
 -- latest run_date would drop everything from earlier days.
-create or replace view ranked_companies as
+drop view if exists ranked_companies;
+create view ranked_companies as
 select distinct on (s.company_id)
        s.company_id, s.score, s.explanation, s.rules_fired, s.run_date,
-       c.name, c.domain, c.round, c.amount_raised, c.raised_date, c.first_seen
+       c.name, c.domain, c.domain_verified, c.round, c.amount_raised,
+       c.raised_date, c.first_seen
 from scores s
 join companies c on c.id = s.company_id
-where c.raised_date is null or c.raised_date >= current_date - 90
+where (c.raised_date is null or c.raised_date >= current_date - 90)
+  and not c.excluded
 order by s.company_id, s.run_date desc;
 
 -- Read-only access for the dashboard via the anon key.

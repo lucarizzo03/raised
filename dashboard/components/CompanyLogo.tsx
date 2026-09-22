@@ -16,10 +16,12 @@ export default function CompanyLogo({
   domain,
   name,
   size,
+  verified,
 }: {
-  domain: string;
+  domain: string | null;
   name: string;
   size: number;
+  verified: boolean;
 }) {
   // 0 = Clearbit, 1 = Google favicons, 2 = initials fallback
   const [step, setStep] = useState(0);
@@ -27,7 +29,10 @@ export default function CompanyLogo({
   // app-icon geometry instead of one reading as a circle.
   const boxStyle = { width: size, height: size, borderRadius: Math.round(size * 0.24) };
 
-  if (step >= 2) {
+  // An unverified domain may belong to a different company entirely, so we
+  // never request a logo for one - that is how other companies' marks ended
+  // up on these rows. Straight to initials.
+  if (!verified || !domain || step >= 2) {
     return (
       <span
         style={boxStyle}

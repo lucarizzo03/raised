@@ -31,17 +31,22 @@ def known_dedupe_keys(conn: psycopg.Connection) -> set[str]:
 def upsert_company(conn: psycopg.Connection, c: Company) -> int:
     row = conn.execute(
         """
-        insert into companies (name, domain, dedupe_key, round, amount_raised, raised_date)
-        values (%s, %s, %s, %s, %s, %s)
+        insert into companies (name, domain, domain_verified, dedupe_key, round,
+                               amount_raised, raised_date, excluded, excluded_reason)
+        values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         on conflict (dedupe_key) do update set
-            name          = excluded.name,
-            domain        = coalesce(excluded.domain, companies.domain),
-            round         = excluded.round,
-            amount_raised = excluded.amount_raised,
-            raised_date   = excluded.raised_date
+            name            = excluded.name,
+            domain          = excluded.domain,
+            domain_verified = excluded.domain_verified,
+            round           = excluded.round,
+            amount_raised   = excluded.amount_raised,
+            raised_date     = excluded.raised_date,
+            excluded        = excluded.excluded,
+            excluded_reason = excluded.excluded_reason
         returning id
         """,
-        (c.name, c.domain, c.dedupe_key, c.round.value, c.amount_raised, c.raised_date),
+        (c.name, c.domain, c.domain_verified, c.dedupe_key, c.round.value,
+         c.amount_raised, c.raised_date, c.excluded, c.excluded_reason),
     ).fetchone()
     return row[0]
 

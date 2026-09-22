@@ -153,12 +153,20 @@ async def main() -> None:
 
     if not args.mock_models:
         await investigate.investigate_all(companies)
-    ranked = score.rank(companies)
-    _print_ranked(ranked)
+    ranked = score.rank(companies)  # scores everything, returns the visible set
+    excluded = [c for c in companies if c.excluded]
+    _print_ranked(ranked[: config.TOP_N])
+    if excluded:
+        print(f"\n{len(excluded)} excluded from the ranking:")
+        for c in excluded:
+            print(f"    {c.name:30s} {c.excluded_reason}")
 
     if args.command == "run":
-        db.persist_run(ranked, date.today())
-        print(f"persisted run {date.today()} ({len(ranked)} companies)")
+        # Excluded companies stay on record with the flag set; only the
+        # ranking hides them.
+        db.persist_run(companies, date.today())
+        print(f"persisted run {date.today()} "
+              f"({len(ranked)} ranked, {len(excluded)} excluded)")
 
 
 if __name__ == "__main__":

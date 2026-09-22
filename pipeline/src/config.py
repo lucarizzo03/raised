@@ -58,13 +58,27 @@ MAX_INVESTIGATION_ROUNDS = 3
 
 # --- Scoring weights (plain code, no model calls) ---------------------------------
 SCORING_WEIGHTS = {
-    "raised_within_30d": 30,
-    "raised_31_90d": 15,
     "round_seed_to_b": 15,
     "first_sales_hire": 30,
     "any_sales_role_open": 15,
     "technical_founders": 10,
 }
+
+# Recency is a linear ramp instead of two buckets: a raise today is worth the
+# full 30, 45 days ago 15, 90 days or older nothing. Buckets put ~80 companies
+# on the same score.
+RECENCY_MAX_POINTS = 30
+RECENCY_WINDOW_DAYS = 90
+
+# ICP fit contributes 0-20. Jev returns the rubric position on a 0-N scale
+# where N is the number of criteria minus one (5 criteria -> 0..4), so it is
+# normalized before scaling.
+ICP_FIT_MAX_POINTS = 20
+ICP_FIT_SCALE_MAX = 4.0
+
+# Fix 3 exclusions.
+B2C_EXCLUDE_CONFIDENCE = 0.7
+LATE_STAGE_AMOUNT_CEILING = 200_000_000
 
 SCORING_ROUNDS = {"seed", "series_a", "series_b"}  # rounds worth SCORING_WEIGHTS["round_seed_to_b"]
 EARLY_ROUNDS = {"pre_seed", "seed", "series_a", "series_b"}
