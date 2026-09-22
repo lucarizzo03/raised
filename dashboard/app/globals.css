@@ -1,1 +1,22 @@
 @import "tailwindcss";
+
+@theme {
+  --color-bg: #ffffff;
+  --color-surface: #fafafa;
+  --color-border: #e5e5e5;
+  --color-text: #111111;
+  --color-text-secondary: #6b6b6b;
+  --color-accent: #ff6600;
+  --color-review-text: #b45309;
+  --color-review-bg: #fef3c7;
+  --color-success-text: #15803d;
+  --color-success-bg: #dcfce7;
+  /* Not in the approved palette, but explicitly required by the logo spec
+     for the initials-fallback background. */
+  --color-initials-bg: #f0f0f0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
