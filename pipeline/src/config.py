@@ -1,0 +1,72 @@
+"""Central configuration: env vars, feeds, scoring weights."""
+
+from __future__ import annotations
+
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# --- LLM (extraction + judge fallback): Anthropic only -------------------------
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+
+# --- Judge backend -------------------------------------------------------------
+# "jev" uses TypeSafe Jev via langchain-typesafe (needs TYPESAFE_API_KEY).
+# "llm" uses the LLM provider above with structured JSON output.
+JUDGE_BACKEND = os.environ.get(
+    "JUDGE_BACKEND",
+    "jev" if os.environ.get("TYPESAFE_API_KEY") else "llm",
+)
+
+CONFIDENCE_REVIEW_THRESHOLD = 0.7
+
+# --- Database ------------------------------------------------------------------
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+# --- Feeds ---------------------------------------------------------------------
+TECHCRUNCH_FEEDS = [
+    "https://techcrunch.com/category/venture/feed/",
+    "https://techcrunch.com/category/startups/feed/",
+]
+
+GOOGLE_NEWS_QUERIES = [
+    "raises Seed",
+    "raises Series A",
+    "raises Series B",
+]
+GOOGLE_NEWS_RSS = (
+    "https://news.google.com/rss/search?q={query}%20when%3A30d"
+    "&hl=en-US&gl=US&ceid=US:en"
+)
+
+EDGAR_FULL_TEXT_SEARCH = "https://efts.sec.gov/LATEST/search-index"
+EDGAR_FORMS = "D"
+EDGAR_LOOKBACK_DAYS = 30
+# SEC requires a declared user agent with contact info.
+EDGAR_USER_AGENT = os.environ.get(
+    "EDGAR_USER_AGENT", "raised-pipeline/0.1 (contact@example.com)"
+)
+
+# --- Fetching -------------------------------------------------------------------
+HTTP_TIMEOUT = 20.0
+HTTP_MAX_CONCURRENCY = 10
+ARTICLE_TEXT_LIMIT = 12_000  # chars fed to the extraction model
+
+# --- Investigation loop ----------------------------------------------------------
+MAX_INVESTIGATION_ROUNDS = 3
+
+# --- Scoring weights (plain code, no model calls) ---------------------------------
+SCORING_WEIGHTS = {
+    "raised_within_30d": 30,
+    "raised_31_90d": 15,
+    "round_seed_to_b": 15,
+    "first_sales_hire": 30,
+    "any_sales_role_open": 15,
+    "technical_founders": 10,
+}
+
+SCORING_ROUNDS = {"seed", "series_a", "series_b"}  # rounds worth SCORING_WEIGHTS["round_seed_to_b"]
+EARLY_ROUNDS = {"pre_seed", "seed", "series_a", "series_b"}
+
+TOP_N = 25  # companies surfaced on the dashboard
