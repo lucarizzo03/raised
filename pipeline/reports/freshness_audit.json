@@ -1,0 +1,78 @@
+{
+  "verified_on": "2026-09-22",
+  "status": {
+    "implementation": "Implemented and tested; not committed or pushed",
+    "database": "Migration, cleanup and one completed backfill applied",
+    "scheduled_job": "Requires publishing the new pipeline code to the GitHub default branch",
+    "ui_stack_scoring_weights": "Unchanged"
+  },
+  "verification": {
+    "tests_passed": 29,
+    "live_url": "https://raised-lac.vercel.app",
+    "live_http_status": 200,
+    "live_browser_errors": 0,
+    "live_sample_data": false,
+    "company_rows_before": 126,
+    "company_rows_after": 147,
+    "company_rows_deleted": 0,
+    "dashboard_companies": 119,
+    "oldest_dashboard_raise": "2026-08-24",
+    "newest_dashboard_raise": "2026-09-22",
+    "visible_date_violations": 0,
+    "companies_missing_new_round_judgment": 0,
+    "companies_with_article_published_at": 136,
+    "quarantined_records_without_recoverable_publication_date": 11,
+    "visible_records_without_publication_date": 0,
+    "incorrect_age_out_states": 0,
+    "plaid_records": 0
+  },
+  "backfill": {
+    "completed_runs": 1,
+    "companies_added": 21,
+    "added_to_visible_ranking": 20,
+    "excluded_by_existing_b2c_rule": 1,
+    "initial_attempt_aborted_before_persistence": true,
+    "initial_failure": "Malformed text JSON from extraction; fixed by using structured Anthropic tool output before retrying",
+    "repeat_backfill_guard": "Verified by PostgreSQL temporary-table tests"
+  },
+  "live_daily_source_check": {
+    "techcrunch": {"fetched": 40, "skipped_too_old": 22, "retained": 18},
+    "google_news": {"fetched": 147, "skipped_too_old": 0, "retained_after_url_dedupe": 128},
+    "sec_edgar": {"fetched": 22, "skipped_too_old": 0, "retained": 22},
+    "note": "Daily source filtering checked without article fetching or model calls. SEC search worked, but archive downloads returned HTTP 403 during backfill; inaccessible pages were not treated as funding evidence. RSS feeds are limited to what their providers expose."
+  },
+  "rejected_or_quarantined": [
+    {"company": "Charikaty", "raised_date": "2026-09-13", "reason": "source_unverifiable"},
+    {"company": "Chift", "raised_date": "2026-09-14", "reason": "source_unverifiable"},
+    {"company": "HelmGuard", "raised_date": "2026-09-09", "reason": "source_unverifiable"},
+    {"company": "Hyperaccel", "raised_date": "2026-09-12", "reason": "source_unverifiable"},
+    {"company": "Inertia", "raised_date": "2026-02-01", "reason": "stale", "detail": "outside_display_window"},
+    {"company": "Kaiko", "raised_date": "2026-09-14", "reason": "not_new_round"},
+    {"company": "Nuvia", "raised_date": "2026-09-17", "reason": "source_unverifiable"},
+    {"company": "OdorPi", "raised_date": "2025-01-08", "reason": "stale", "detail": "outside_display_window"},
+    {"company": "Pave Finance", "raised_date": "2026-09-14", "reason": "source_unverifiable"},
+    {"company": "PyroCCS", "raised_date": "2026-09-14", "reason": "source_unverifiable"},
+    {"company": "SurfAce Cleantech", "raised_date": "2026-09-11", "reason": "source_unverifiable"},
+    {"company": "Synapse Analytics", "raised_date": "2026-09-14", "reason": "source_unverifiable"},
+    {"company": "Vals", "raised_date": "2026-08-19", "reason": "stale", "detail": "article_lag"},
+    {"company": "Wyre AI", "raised_date": "2026-09-10", "reason": "source_unverifiable"},
+    {"company": "XDOF", "raised_date": "2026-09-04", "reason": "not_new_round"}
+  ],
+  "rejection_notes": "These records were archived in rejected_companies and excluded, not deleted. Some were already outside the old dashboard view or excluded by existing rules. source_unverifiable means the original article or its publication date could not be verified. Unknown dates were not fabricated.",
+  "acceptance_checklist": [
+    {"item": "All four window values live in the config block, nowhere else", "status": "PASS", "evidence": "Executable window definitions centralized in pipeline/src/config.py; SQL receives the display window from that configuration"},
+    {"item": "RSS items older than 3 days are skipped before fetching", "status": "PASS", "evidence": "UTC publication-time filtering before article fetching and Google URL decoding; boundary and missing-date tests passed"},
+    {"item": "Google News queries include when:3d; EDGAR uses a 3-day range", "status": "PASS", "evidence": "Configured queries and live daily-source check verified; scheduled activation still requires the code to be published"},
+    {"item": "Per-source fetched/skipped counts are logged each run", "status": "PASS", "evidence": "Verified in daily-source check and backfill logs"},
+    {"item": "Extraction ignores past rounds mentioned as background", "status": "PASS", "evidence": "Explicit extraction instructions, original publisher-date recheck, structured output and historical-article regression test"},
+    {"item": "Jev new round question runs on every company", "status": "PASS", "evidence": "All 147 stored companies have a new_round signal; live cleanup/backfill used JevBackend"},
+    {"item": "article_published_at column exists and is populated", "status": "FAIL", "evidence": "Column exists and is populated for all 119 displayed companies, but 11 quarantined historical records lack a recoverable publication date and intentionally remain NULL"},
+    {"item": "Stale, lagged and future-dated raises are rejected with reasons", "status": "PASS", "evidence": "Boundary tests passed; zero date violations in the live ranking; rejection reasons and snapshots persisted"},
+    {"item": "Companies past 90 days are excluded as aged out, not deleted", "status": "PASS", "evidence": "Zero incorrect age-out states; company rows retained; PostgreSQL retention tests passed"},
+    {"item": "Existing data cleaned up; removal list shown", "status": "PASS", "evidence": "All 126 original records checked; 15 rejection/quarantine entries listed in this report"},
+    {"item": "Backfill flag works and pulls 30 days", "status": "PASS", "evidence": "One completed backfill added 21 companies; repeat guard tested"},
+    {"item": "Cron never runs backfill", "status": "PASS", "evidence": "Daily workflow invokes ordinary run without --backfill; test enforces this"},
+    {"item": "Plaid's old Series A is gone", "status": "PASS", "evidence": "No Plaid record exists in the connected database; it was already absent before cleanup; an old Plaid article is covered by a regression test"},
+    {"item": "Oldest raise on the dashboard is within 90 days", "status": "PASS", "evidence": "Oldest visible raise is 2026-08-24 as verified on 2026-09-22"}
+  ]
+}

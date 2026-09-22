@@ -4,47 +4,62 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote
 
 import feedparser
 import httpx
 
 from . import config
+from .dates import now_utc
 from .models import FeedItem
 
 log = logging.getLogger(__name__)
 
 
-def _entry_date(entry) -> date | None:
-    for key in ("published_parsed", "updated_parsed"):
-        parsed = entry.get(key)
-        if parsed:
-            return date(*parsed[:3])
-    return None
+def _entry_date(entry) -> datetime | None:
+    parsed = entry.get("published_parsed")
+    if not parsed:
+        return None
+    try:
+        return datetime(*parsed[:6], tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return None
 
 
-async def fetch_techcrunch() -> list[FeedItem]:
-    items: list[FeedItem] = []
+def _filter_entries(entries, source: str, window_days: int) -> list[FeedItem]:
+    now = now_utc()
+    cutoff = now - timedelta(days=window_days)
+    old = missing = future = 0
+    items = []
+    for entry in entries:
+        published = _entry_date(entry)
+        if published is None:
+            missing += 1
+        elif published < cutoff:
+            old += 1
+        elif published > now:
+            future += 1
+        elif entry.get("link"):
+            items.append(FeedItem(title=entry.get("title", ""), url=entry["link"], published=published.date(), source=source))
+    log.info("%s: fetched=%d skipped_too_old=%d skipped_missing_date=%d skipped_future=%d kept=%d window_days=%d", source, len(entries), old, missing, future, len(items), window_days)
+    return items
+
+
+async def fetch_techcrunch(window_days: int = config.INGEST_WINDOW_DAYS) -> list[FeedItem]:
+    entries = []
     for url in config.TECHCRUNCH_FEEDS:
         feed = await asyncio.to_thread(feedparser.parse, url)
-        for entry in feed.entries:
-            items.append(
-                FeedItem(
-                    title=entry.get("title", ""),
-                    url=entry.get("link", ""),
-                    published=_entry_date(entry),
-                    source="techcrunch",
-                )
-            )
-    log.info("techcrunch: %d items", len(items))
-    return items
+        entries.extend(feed.entries)
+    return _filter_entries(entries, "techcrunch", window_days)
 
 
 async def _resolve_google_news_urls(items: list[FeedItem]) -> None:
     """Google News RSS links are JS-redirect pages; decode via batchexecute."""
     from googlenewsdecoder import gnews_decoder_async
 
+    if not items:
+        return
     try:
         results = await gnews_decoder_async([i.url for i in items])
     except Exception as exc:
@@ -56,33 +71,20 @@ async def _resolve_google_news_urls(items: list[FeedItem]) -> None:
             item.url = decoded
 
 
-async def fetch_google_news() -> list[FeedItem]:
-    items: list[FeedItem] = []
-    seen: set[str] = set()
+async def fetch_google_news(window_days: int = config.INGEST_WINDOW_DAYS) -> list[FeedItem]:
+    entries = []
     for query in config.GOOGLE_NEWS_QUERIES:
-        url = config.GOOGLE_NEWS_RSS.format(query=quote(query))
+        url = config.GOOGLE_NEWS_RSS.format(query=quote(query), window_days=window_days)
         feed = await asyncio.to_thread(feedparser.parse, url)
-        for entry in feed.entries:
-            link = entry.get("link", "")
-            if not link or link in seen:
-                continue
-            seen.add(link)
-            items.append(
-                FeedItem(
-                    title=entry.get("title", ""),
-                    url=link,
-                    published=_entry_date(entry),
-                    source="google_news",
-                )
-            )
-    log.info("google_news: %d items (resolving urls)", len(items))
+        entries.extend(feed.entries)
+    items = list({i.url: i for i in _filter_entries(entries, "google_news", window_days)}.values())
     await _resolve_google_news_urls(items)
     return items
 
 
-async def fetch_edgar() -> list[FeedItem]:
-    end = date.today()
-    start = end - timedelta(days=config.EDGAR_LOOKBACK_DAYS)
+async def fetch_edgar(window_days: int = config.INGEST_WINDOW_DAYS) -> list[FeedItem]:
+    end = now_utc().date()
+    start = end - timedelta(days=window_days)
     params = {
         "q": '"funding" OR "offering"',
         "forms": config.EDGAR_FORMS,
@@ -91,6 +93,7 @@ async def fetch_edgar() -> list[FeedItem]:
         "enddt": end.isoformat(),
     }
     items: list[FeedItem] = []
+    old = missing = future = 0
     async with httpx.AsyncClient(
         headers={"User-Agent": config.EDGAR_USER_AGENT},
         timeout=config.HTTP_TIMEOUT,
@@ -101,42 +104,40 @@ async def fetch_edgar() -> list[FeedItem]:
             hits = resp.json().get("hits", {}).get("hits", [])
         except (httpx.HTTPError, ValueError) as exc:
             log.warning("edgar search failed: %s", exc)
+            log.info("sec_edgar: fetched=0 skipped_too_old=0 skipped_missing_date=0 window_days=%d", window_days)
             return items
         for hit in hits:
             src = hit.get("_source", {})
             hit_id = hit.get("_id", "")
-            name = (src.get("entity_name") or "").strip()
+            name = src.get("entity_name") or src.get("display_names") or ""
+            name = ", ".join(name) if isinstance(name, list) else name.strip()
             filed = src.get("file_date")
             ciks = src.get("ciks") or []
-            url = ""
-            if ":" in hit_id and ciks:
-                adsh, filename = hit_id.split(":", 1)
-                url = (
-                    f"https://www.sec.gov/Archives/edgar/data/{ciks[0]}"
-                    f"/{adsh.replace('-', '')}/{filename}"
-                )
-            filed_date = None
-            if filed:
-                try:
-                    filed_date = datetime.strptime(filed, "%Y-%m-%d").date()
-                except ValueError:
-                    pass
-            items.append(
-                FeedItem(
-                    title=f"Form D filing: {name}" if name else "Form D filing",
-                    url=url or "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&type=D",
-                    published=filed_date,
-                    source="sec_edgar",
-                    text=f"SEC Form D notice of exempt offering of securities filed by {name}.",
-                )
-            )
-    log.info("sec_edgar: %d items", len(items))
+            try:
+                filed_date = date.fromisoformat(filed) if filed else None
+            except (ValueError, TypeError):
+                filed_date = None
+            if filed_date is None:
+                missing += 1
+                continue
+            if filed_date < start:
+                old += 1
+                continue
+            if filed_date > end:
+                future += 1
+                continue
+            if ":" not in hit_id or not ciks:
+                continue
+            adsh, filename = hit_id.split(":", 1)
+            url = f"https://www.sec.gov/Archives/edgar/data/{ciks[0]}/{adsh.replace('-', '')}/{filename}"
+            items.append(FeedItem(title=f"Form D filing: {name}" if name else "Form D filing", url=url, published=filed_date, source="sec_edgar"))
+    log.info("sec_edgar: fetched=%d skipped_too_old=%d skipped_missing_date=%d skipped_future=%d kept=%d window_days=%d", len(hits), old, missing, future, len(items), window_days)
     return items
 
 
-async def fetch_all_feeds() -> list[FeedItem]:
+async def fetch_all_feeds(window_days: int = config.INGEST_WINDOW_DAYS) -> list[FeedItem]:
     results = await asyncio.gather(
-        fetch_techcrunch(), fetch_google_news(), fetch_edgar()
+        fetch_techcrunch(window_days), fetch_google_news(window_days), fetch_edgar(window_days)
     )
     items = [item for sublist in results for item in sublist]
     # In-run dedupe on URL before we spend fetch calls on them.

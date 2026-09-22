@@ -19,6 +19,10 @@ jobs:
         working-directory: pipeline
         run: pip install -r requirements.txt
 
+      - name: Test date-window rules
+        working-directory: pipeline
+        run: python -m unittest discover -s tests -v
+
       - name: Run pipeline
         working-directory: pipeline
         env:

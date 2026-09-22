@@ -18,24 +18,25 @@ import asyncio
 import logging
 from datetime import date
 
-from . import config, db
+from . import config, dates, db
 from .models import Company
 
 log = logging.getLogger(__name__)
 
 
-async def _discover(mock: bool) -> list[Company]:
+async def _discover(mock: bool, window_days: int = config.INGEST_WINDOW_DAYS) -> list[Company]:
     from . import extract, feeds
 
-    items = await feeds.fetch_all_feeds()
     if mock:
         return _mock_companies()
-    return await extract.extract_companies(items)
+    items = await feeds.fetch_all_feeds(window_days)
+    return await extract.extract_companies(items, window_days)
 
 
 async def _dedupe_against_db(companies: list[Company]) -> list[Company]:
     try:
-        known = db.known_dedupe_keys(db.get_conn())
+        with db.get_conn() as conn:
+            known = db.known_dedupe_keys(conn)
     except Exception as exc:
         log.warning("db dedupe skipped: %s", exc)
         return companies
@@ -93,7 +94,10 @@ def _mock_companies() -> list[Company]:
                 investors=["Fund"], source_url="https://example.com/beta"),
     ]
     for c in cos:
+        c.article_published_at = date.today()
+        c.funding_evidence = "Mock funding announcement"
         c.signals = [
+            Signal(signal_type="new_round", value="yes", confidence=0.95, source_url=c.source_url),
             Signal(signal_type="genuine_raise", value="yes", confidence=0.95, source_url=c.source_url),
             Signal(signal_type="sales_role", value="yes (Account Executive)", confidence=0.9,
                    source_url="https://jobs.ashbyhq.com/acmedata/1"),
@@ -103,16 +107,65 @@ def _mock_companies() -> list[Company]:
     return cos
 
 
-async def main() -> None:
+def _print_rejections(companies: list[Company]) -> None:
+    for c in companies:
+        if c.rejection_reason:
+            print(f"REJECTED | {c.name} | raised={c.raised_date} | article={c.article_published_at} | {c.rejection_reason}: {c.rejection_detail}")
+
+
+async def _screen(companies: list[Company], mock: bool = False) -> list[Company]:
+    from .judge import judge_new_round
+
+    sem = asyncio.Semaphore(config.HTTP_MAX_CONCURRENCY)
+
+    async def screen(company):
+        async with sem:
+            if not mock:
+                await judge_new_round(company)
+            dates.apply_rejection(company)
+
+    await asyncio.gather(*(screen(c) for c in companies))
+    return [c for c in companies if not c.rejection_reason]
+
+
+async def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["discover", "jobs", "judge", "score", "run", "ranked"])
+    parser.add_argument("command", nargs="?", default="run", choices=["discover", "jobs", "judge", "score", "run", "ranked", "migrate", "cleanup"])
+    parser.add_argument("--backfill", action="store_true")
     parser.add_argument("--mock-models", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.backfill and args.command != "run":
+        parser.error("--backfill is only supported for run")
+    if args.mock_models and args.command in {"run", "cleanup"}:
+        parser.error("--mock-models cannot write to the database; use score to preview")
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s %(name)s: %(message)s",
     )
+
+    if not args.verbose:
+        for name in ("httpx", "httpx2"):
+            logging.getLogger(name).setLevel(logging.WARNING)
+    today = dates.now_utc().date()
+    if args.command in {"run", "cleanup", "migrate"}:
+        db.migrate()
+    if args.command == "migrate":
+        print("date-window migration applied")
+        return
+    if args.command == "cleanup":
+        from .cleanup import audit_existing
+
+        companies = await audit_existing()
+        result = db.persist_run(companies, today, write_scores=False)
+        _print_rejections(companies)
+        print(f"Cleanup: {result}")
+        print(f"Dashboard: {db.dashboard_summary()}")
+        return
+    if args.command == "run":
+        if args.backfill and db.backfill_completed():
+            parser.error("The one-time backfill has already completed")
+        db.exclude_aged_out(today)
 
     if args.command == "ranked":
         for i, r in enumerate(db.fetch_ranked(), 1):
@@ -121,20 +174,23 @@ async def main() -> None:
 
     from . import investigate, jobs as jobs_mod, judge, score
 
-    companies = await _discover(args.mock_models)
+    window_days = config.BACKFILL_WINDOW_DAYS if args.backfill else config.INGEST_WINDOW_DAYS
+    log.info("pipeline mode=%s window_days=%d", "backfill" if args.backfill else "daily", window_days)
+    companies = await _discover(args.mock_models, window_days)
     companies = await _dedupe_against_db(companies)
 
     if args.command == "discover":
         _print_companies(companies)
         return
 
-    await jobs_mod.fetch_all_jobs(companies)
+    eligible = await _screen(companies, args.mock_models)
+    await jobs_mod.fetch_all_jobs(eligible)
     if args.command == "jobs":
-        _print_jobs(companies)
+        _print_jobs(eligible)
         return
 
     if not args.mock_models:
-        await judge.judge_all(companies)
+        await judge.judge_all(eligible)
     if args.command == "judge":
         # Fetch about pages so founder/first-hire judgments print too.
         if not args.mock_models:
@@ -143,17 +199,18 @@ async def main() -> None:
             fetcher = Fetcher()
             try:
                 await asyncio.gather(
-                    *(investigate._fetch_about(c, fetcher) for c in companies)
+                    *(investigate._fetch_about(c, fetcher) for c in eligible)
                 )
             finally:
                 await fetcher.close()
-            await asyncio.gather(*(judge.judge_founders(c) for c in companies))
+            await asyncio.gather(*(judge.judge_founders(c) for c in eligible))
         _print_signals(companies)
         return
 
     if not args.mock_models:
-        await investigate.investigate_all(companies)
-    ranked = score.rank(companies)  # scores everything, returns the visible set
+        await investigate.investigate_all(eligible)
+    ranked = score.rank(eligible)  # scores everything, returns the visible set
+    _print_rejections(companies)
     excluded = [c for c in companies if c.excluded]
     _print_ranked(ranked[: config.TOP_N])
     if excluded:
@@ -164,9 +221,10 @@ async def main() -> None:
     if args.command == "run":
         # Excluded companies stay on record with the flag set; only the
         # ranking hides them.
-        db.persist_run(companies, date.today())
-        print(f"persisted run {date.today()} "
-              f"({len(ranked)} ranked, {len(excluded)} excluded)")
+        result = db.persist_run(companies, today, backfill=args.backfill)
+        print(f"persisted run {today} ({len(ranked)} ranked, {len(excluded)} excluded)")
+        print(f"{'Backfill' if args.backfill else 'Daily'}: {result}")
+        print(f"Dashboard: {db.dashboard_summary()}")
 
 
 if __name__ == "__main__":
