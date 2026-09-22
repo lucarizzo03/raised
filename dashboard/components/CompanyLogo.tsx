@@ -29,7 +29,7 @@ export default function CompanyLogo({
     return (
       <span
         style={boxStyle}
-        className="flex shrink-0 items-center justify-center rounded border border-border bg-initials-bg text-[11px] font-semibold text-text-secondary"
+        className="flex shrink-0 items-center justify-center rounded-md border border-border bg-initials-bg text-[11px] font-semibold text-text-secondary"
       >
         {initials(name)}
       </span>
@@ -61,7 +61,7 @@ export default function CompanyLogo({
       src={src}
       alt=""
       style={boxStyle}
-      className="shrink-0 border border-border object-contain"
+      className="shrink-0 rounded-md border border-border object-contain"
       onError={(e) => evaluate(e.currentTarget, step)}
       onLoad={(e) => evaluate(e.currentTarget, step)}
       ref={(node) => {

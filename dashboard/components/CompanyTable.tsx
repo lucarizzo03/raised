@@ -28,6 +28,9 @@ function fmtAmount(v: number): string {
   return `$${text}M`;
 }
 
+const fieldClass =
+  "h-9 rounded-md border border-border bg-surface px-3 text-text shadow-sm transition-colors hover:border-text-secondary/40 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20";
+
 export default function CompanyTable({ companies }: { companies: Company[] }) {
   const [roundFilter, setRoundFilter] = useState<Round | "">("");
   const [minScore, setMinScore] = useState<number>(0);
@@ -82,18 +85,18 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
   }) {
     const active = sortKey === sortKeyName;
     return (
-      <th className={`py-2 pr-2 font-medium ${hideOnMobile ? "hidden md:table-cell" : ""}`}>
+      <th className={`py-3 pr-2 font-medium ${hideOnMobile ? "hidden md:table-cell" : ""}`}>
         <button
           type="button"
           onClick={() => toggleSort(sortKeyName)}
-          className="flex items-center gap-1 text-left transition-colors hover:text-text"
+          className="-mx-1.5 flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-left transition-colors hover:bg-hover hover:text-text"
         >
           {label}
           {active &&
             (sortDir === "asc" ? (
-              <ChevronUp size={12} className="text-text" />
+              <ChevronUp size={12} className="text-accent" />
             ) : (
-              <ChevronDown size={12} className="text-text" />
+              <ChevronDown size={12} className="text-accent" />
             ))}
         </button>
       </th>
@@ -101,14 +104,14 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
   }
 
   return (
-    <div>
-      <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
+    <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4 text-sm">
         <select
-          className="h-7 rounded border border-border bg-bg px-2 text-text"
+          className={fieldClass}
           value={roundFilter}
           onChange={(e) => setRoundFilter(e.target.value as Round | "")}
         >
-          <option value="">All</option>
+          <option value="">All rounds</option>
           {ROUNDS.map((r) => (
             <option key={r} value={r}>
               {r}
@@ -124,7 +127,7 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
             max={100}
             value={minScore}
             onChange={(e) => setMinScore(Number(e.target.value) || 0)}
-            className="h-7 w-16 rounded border border-border bg-bg px-2 text-text"
+            className={`${fieldClass} w-20`}
           />
         </label>
 
@@ -133,11 +136,12 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
             type="checkbox"
             checked={needsReviewOnly}
             onChange={(e) => setNeedsReviewOnly(e.target.checked)}
+            className="h-4 w-4 accent-[#ff6600]"
           />
           Needs review only
         </label>
 
-        <span className="ml-auto text-text-secondary">
+        <span className="ml-auto text-xs text-text-secondary">
           Showing {rows.length} of {companies.length}
         </span>
       </div>
@@ -146,13 +150,13 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
         <table className="w-full min-w-[640px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs text-text-secondary">
-              <th className="w-8 py-2 pr-2 text-right font-medium">#</th>
-              <th className="py-2 pr-2 font-medium">Company</th>
+              <th className="w-8 py-3 pl-5 pr-2 text-right font-medium">#</th>
+              <th className="py-3 pr-2 font-medium">Company</th>
               <SortHeader label="Score" sortKeyName="score" />
-              <th className="py-2 pr-2 font-medium">Round</th>
+              <th className="py-3 pr-2 font-medium">Round</th>
               <SortHeader label="Raised" sortKeyName="raised" hideOnMobile />
               <SortHeader label="Days ago" sortKeyName="days" hideOnMobile />
-              <th className="py-2 font-medium">Signals</th>
+              <th className="py-3 pr-5 font-medium">Signals</th>
             </tr>
           </thead>
           <tbody>
@@ -165,15 +169,15 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
                 <Fragment key={c.id}>
                   <tr
                     onClick={() => setExpanded(isOpen ? null : c.id)}
-                    className={`h-11 cursor-pointer border-b border-border hover:bg-surface ${
-                      isOpen ? "border-l-2 border-l-accent" : ""
+                    className={`h-12 cursor-pointer border-b border-border transition-colors hover:bg-hover ${
+                      isOpen ? "bg-hover border-l-2 border-l-accent" : ""
                     }`}
                   >
-                    <td className="py-2 pr-2 text-right text-xs text-text-secondary tabular-nums">
+                    <td className="py-2 pl-5 pr-2 text-right text-xs text-text-secondary tabular-nums">
                       {rank}
                     </td>
                     <td className="py-2 pr-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2.5">
                         <CompanyLogo domain={c.domain} name={c.name} size={24} />
                         <div>
                           <div className="text-sm font-medium text-text">{c.name}</div>
@@ -183,9 +187,9 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
                     </td>
                     <td className="py-2 pr-2">
                       <div className="text-base font-semibold tabular-nums text-text">{c.score}</div>
-                      <div className="mt-1.5 h-1.5 w-16 rounded bg-border">
+                      <div className="mt-1.5 h-1.5 w-16 rounded-full bg-border">
                         <div
-                          className="h-1.5 rounded bg-accent"
+                          className="h-1.5 rounded-full bg-accent"
                           style={{ width: `${Math.min(100, Math.max(0, c.score))}%` }}
                         />
                       </div>
@@ -197,14 +201,16 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
                     <td className="hidden py-2 pr-2 tabular-nums text-text md:table-cell">
                       {days}
                     </td>
-                    <td className="py-2">
+                    <td className="py-2 pr-5">
                       <RowSignals signals={c.signals} />
                     </td>
                   </tr>
                   {isOpen && (
-                    <tr className="border-b border-border border-l-2 border-l-accent bg-surface">
+                    <tr className="border-b border-border border-l-2 border-l-accent bg-canvas">
                       <td colSpan={7} className="p-6">
-                        <ExpandedRow company={c} />
+                        <div className="animate-reveal">
+                          <ExpandedRow company={c} />
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -226,9 +232,9 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
 
 function RowSignals({ signals }: { signals: Signal[] }) {
   // Funding is already shown in the Round/Raised columns — repeating it as
-  // a badge here is redundant. Only needsReview signals get the bordered
-  // pill treatment; everything else is plain text so the row reads instead
-  // of turning into a wall of chips.
+  // a badge here is redundant. Only needsReview signals get the pill
+  // treatment; everything else is plain text so the row reads instead of
+  // turning into a wall of chips.
   const relevant = signals.filter((s) => s.type !== "funding");
   const shown = relevant.slice(0, 3);
   const hidden = relevant.length - shown.length;
@@ -239,7 +245,7 @@ function RowSignals({ signals }: { signals: Signal[] }) {
         s.needsReview ? (
           <span
             key={s.id}
-            className="rounded border border-border bg-review-bg px-1.5 py-0.5 text-xs text-review-text"
+            className="rounded-full bg-review-bg px-2 py-0.5 text-xs text-review-text"
           >
             {s.label} (review)
           </span>
@@ -269,7 +275,7 @@ function ExpandedRow({ company }: { company: Company }) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
       <div>
         <div className="flex items-center gap-3">
           <CompanyLogo domain={company.domain} name={company.name} size={40} />
@@ -280,30 +286,34 @@ function ExpandedRow({ company }: { company: Company }) {
               target="_blank"
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="text-xs text-accent"
+              className="text-xs text-accent transition-opacity hover:opacity-70"
             >
               {company.domain}
             </a>
           </div>
         </div>
-        <p className="mt-3 text-sm text-text">{company.explanation}</p>
+        <p className="mt-3 text-sm leading-relaxed text-text">{company.explanation}</p>
 
-        <h3 className="mb-1 mt-4 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">Why this score</h3>
+        <h3 className="mb-1.5 mt-5 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
+          Why this score
+        </h3>
         <ul className="text-sm">
           {company.rulesFired.map((r) => (
-            <li key={r.rule} className="flex justify-between py-0.5">
+            <li key={r.rule} className="flex justify-between py-1">
               <span className="text-text">{r.rule}</span>
               <span className="tabular-nums text-text">+{r.points}</span>
             </li>
           ))}
         </ul>
-        <div className="mt-1 flex justify-between border-t border-border pt-1 text-sm font-semibold">
+        <div className="mt-1 flex justify-between border-t border-border pt-2 text-sm font-semibold">
           <span className="text-text">Total</span>
           <span className="tabular-nums text-text">{total}</span>
         </div>
 
-        <h3 className="mb-1 mt-4 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">Signals</h3>
-        <ul className="space-y-1 text-sm">
+        <h3 className="mb-1.5 mt-5 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
+          Signals
+        </h3>
+        <ul className="space-y-1.5 text-sm">
           {company.signals.map((s) => (
             <li key={s.id} className="flex flex-wrap items-baseline gap-2">
               <span className="text-text">{s.label}</span>
@@ -311,7 +321,7 @@ function ExpandedRow({ company }: { company: Company }) {
                 {s.confidence.toFixed(2)}
               </span>
               {s.needsReview && (
-                <span className="rounded border border-border bg-review-bg px-1.5 py-0.5 text-xs text-review-text">
+                <span className="rounded-full bg-review-bg px-2 py-0.5 text-xs text-review-text">
                   review
                 </span>
               )}
@@ -320,7 +330,7 @@ function ExpandedRow({ company }: { company: Company }) {
                 target="_blank"
                 rel="noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                className="text-xs text-accent"
+                className="text-xs text-accent transition-opacity hover:opacity-70"
               >
                 source
               </a>
@@ -330,11 +340,13 @@ function ExpandedRow({ company }: { company: Company }) {
       </div>
 
       <div>
-        <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">Investigation</h3>
+        <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
+          Investigation
+        </h3>
         {company.decisions.length === 0 ? (
           <p className="text-sm text-text-secondary">Scored on first pass</p>
         ) : (
-          <ol className="space-y-1 text-sm text-text">
+          <ol className="space-y-1.5 text-sm text-text">
             {company.decisions.map((d) => (
               <li key={d.round}>
                 Round {d.round} - {d.question} {d.answer} ({d.confidence.toFixed(2)}) -&gt;{" "}
@@ -344,19 +356,23 @@ function ExpandedRow({ company }: { company: Company }) {
           </ol>
         )}
 
-        <h3 className="mb-1 mt-4 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">Draft email</h3>
-        <div className="relative rounded border border-border bg-bg p-3 pt-8">
+        <h3 className="mb-1.5 mt-5 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
+          Draft email
+        </h3>
+        <div className="relative rounded-md border border-border bg-surface p-4 pt-9 shadow-sm">
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               copyEmail();
             }}
-            className="absolute right-2 top-2 text-xs text-accent"
+            className="absolute right-3 top-3 rounded-sm px-1.5 py-0.5 text-xs text-accent transition-colors hover:bg-hover"
           >
             {copied ? "Copied" : "Copy"}
           </button>
-          <p className="whitespace-pre-wrap text-sm text-text">{company.draftEmail}</p>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-text">
+            {company.draftEmail}
+          </p>
         </div>
       </div>
     </div>

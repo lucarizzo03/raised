@@ -1,22 +1,52 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #ffffff;
-  --color-surface: #fafafa;
-  --color-border: #e5e5e5;
-  --color-text: #111111;
-  --color-text-secondary: #6b6b6b;
+  /* Warm canvas the page sits on, with a white panel elevated above it —
+     the Apple System Settings / grouped-list pattern. */
+  --color-canvas: #f6f5f2;
+  --color-surface: #ffffff;
+  --color-hover: #f5f4f0;
+  --color-border: #e8e6e1;
+  --color-text: #16150f;
+  --color-text-secondary: #74726b;
   --color-accent: #ff6600;
+  --color-accent-soft: #fff1e6;
   --color-review-text: #b45309;
   --color-review-bg: #fef3c7;
   --color-success-text: #15803d;
   --color-success-bg: #dcfce7;
-  /* Not in the approved palette, but explicitly required by the logo spec
-     for the initials-fallback background. */
-  --color-initials-bg: #f0f0f0;
+  --color-initials-bg: #efeee9;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --shadow-md: 0 12px 32px -8px rgb(22 21 15 / 0.10), 0 2px 8px -2px rgb(22 21 15 / 0.05);
 }
 
 body {
-  background: var(--color-bg);
+  background: var(--color-canvas);
   color: var(--color-text);
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-reveal {
+  animation: reveal 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-reveal {
+    animation: none;
+  }
 }
