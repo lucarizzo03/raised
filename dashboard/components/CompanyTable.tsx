@@ -172,6 +172,53 @@ export default function CompanyTable({
   );
 }
 
+type SourceGroup = { label: string; sources: { url: string; signalTypes: string[] }[] };
+
+function sourceCategory(url: string): string {
+  const host = (() => {
+    try {
+      return new URL(url).hostname.replace(/^www\./, "");
+    } catch {
+      return url;
+    }
+  })();
+  if (host.includes("sec.gov")) return "SEC filings";
+  if (
+    host.includes("ashbyhq.com") ||
+    host.includes("greenhouse.io") ||
+    host.includes("lever.co")
+  )
+    return "Job postings";
+  return "Funding news";
+}
+
+function groupSources(signals: SignalRow[]): SourceGroup[] {
+  const byUrl = new Map<string, Set<string>>();
+  for (const s of signals) {
+    if (!s.source_url) continue;
+    if (!byUrl.has(s.source_url)) byUrl.set(s.source_url, new Set());
+    byUrl.get(s.source_url)!.add(s.signal_type);
+  }
+  const groups = new Map<string, { url: string; signalTypes: string[] }[]>();
+  for (const [url, types] of byUrl) {
+    const cat = sourceCategory(url);
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat)!.push({ url, signalTypes: [...types].sort() });
+  }
+  const order = ["Funding news", "SEC filings", "Job postings"];
+  return order
+    .filter((label) => groups.has(label))
+    .map((label) => ({ label, sources: groups.get(label)! }));
+}
+
+function sourceHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
 function ExpandedRow({
   company,
   signals,
@@ -214,6 +261,34 @@ function ExpandedRow({
           ))}
           {signals.length === 0 && <li className="text-neutral-400">No signals recorded.</li>}
         </ul>
+
+        <h3 className="mb-1 mt-3 text-xs font-semibold uppercase text-neutral-400">Sources</h3>
+        {groupSources(signals).map((group) => (
+          <div key={group.label} className="mb-2">
+            <p className="text-xs font-medium text-neutral-500">{group.label}</p>
+            <ul className="space-y-0.5 text-sm">
+              {group.sources.map((s) => (
+                <li key={s.url} className="flex items-baseline gap-2">
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {sourceHost(s.url)}
+                  </a>
+                  <span className="truncate text-xs text-neutral-400">
+                    {s.signalTypes.join(", ")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        {groupSources(signals).length === 0 && (
+          <p className="text-sm text-neutral-400">No sources recorded.</p>
+        )}
       </div>
       <div>
         <h3 className="mb-1 text-xs font-semibold uppercase text-neutral-400">Rules fired</h3>
