@@ -41,14 +41,16 @@ export default function CompanyLogo({
       ? `https://logo.clearbit.com/${domain}`
       : `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
 
-  // Google's favicon endpoint returns 200 with a generic 16x16 globe icon
-  // (ignoring sz=128) for domains it has no favicon for, instead of
-  // erroring — treat that as a miss and fall through to initials. Checked
-  // both on load and via ref (for images the browser already had cached,
-  // where the "load" event fires before React attaches the listener).
-  function checkFavicon(img: HTMLImageElement) {
-    if (step === 1 && img.naturalWidth > 0 && img.naturalWidth < 32) {
-      setStep((s) => s + 1);
+  // Advance past a failed load or Google's generic 16x16 globe icon (it
+  // returns 200 with that placeholder — ignoring sz=128 — instead of
+  // erroring for domains it has no favicon for). Checked on load/error AND
+  // via ref: a browser that already has the URL cached (failed or not)
+  // resolves it before React attaches the listener, so onLoad/onError never
+  // fire for it — the ref catches that by checking img.complete on mount.
+  function evaluate(img: HTMLImageElement, atStep: number) {
+    if (!img.complete) return;
+    if (img.naturalWidth === 0 || (atStep === 1 && img.naturalWidth < 32)) {
+      setStep((s) => (s === atStep ? s + 1 : s));
     }
   }
 
@@ -60,10 +62,10 @@ export default function CompanyLogo({
       alt=""
       style={boxStyle}
       className="shrink-0 border border-border object-contain"
-      onError={() => setStep((s) => s + 1)}
-      onLoad={(e) => checkFavicon(e.currentTarget)}
+      onError={(e) => evaluate(e.currentTarget, step)}
+      onLoad={(e) => evaluate(e.currentTarget, step)}
       ref={(node) => {
-        if (node && node.complete) checkFavicon(node);
+        if (node) evaluate(node, step);
       }}
     />
   );
