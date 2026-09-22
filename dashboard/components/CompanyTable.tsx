@@ -86,7 +86,7 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
         <button
           type="button"
           onClick={() => toggleSort(sortKeyName)}
-          className="flex items-center gap-1 text-left"
+          className="flex items-center gap-1 text-left transition-colors hover:text-text"
         >
           {label}
           {active &&
@@ -160,8 +160,6 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
               const isOpen = expanded === c.id;
               const rank = i + 1;
               const days = daysAgo(c.raisedDate);
-              const shown = c.signals.slice(0, 3);
-              const hidden = c.signals.length - shown.length;
 
               return (
                 <Fragment key={c.id}>
@@ -184,10 +182,10 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
                       </div>
                     </td>
                     <td className="py-2 pr-2">
-                      <div className="font-semibold tabular-nums text-text">{c.score}</div>
-                      <div className="mt-1 h-1 w-16 bg-border">
+                      <div className="text-base font-semibold tabular-nums text-text">{c.score}</div>
+                      <div className="mt-1.5 h-1.5 w-16 rounded bg-border">
                         <div
-                          className="h-1 bg-accent"
+                          className="h-1.5 rounded bg-accent"
                           style={{ width: `${Math.min(100, Math.max(0, c.score))}%` }}
                         />
                       </div>
@@ -200,14 +198,7 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
                       {days}
                     </td>
                     <td className="py-2">
-                      <div className="flex flex-wrap items-center gap-1">
-                        {shown.map((s) => (
-                          <Badge key={s.id} signal={s} />
-                        ))}
-                        {hidden > 0 && (
-                          <span className="text-xs text-text-secondary">+{hidden}</span>
-                        )}
-                      </div>
+                      <RowSignals signals={c.signals} />
                     </td>
                   </tr>
                   {isOpen && (
@@ -233,18 +224,33 @@ export default function CompanyTable({ companies }: { companies: Company[] }) {
   );
 }
 
-function Badge({ signal }: { signal: Signal }) {
-  const label = signal.needsReview ? `${signal.label} (review)` : signal.label;
+function RowSignals({ signals }: { signals: Signal[] }) {
+  // Funding is already shown in the Round/Raised columns — repeating it as
+  // a badge here is redundant. Only needsReview signals get the bordered
+  // pill treatment; everything else is plain text so the row reads instead
+  // of turning into a wall of chips.
+  const relevant = signals.filter((s) => s.type !== "funding");
+  const shown = relevant.slice(0, 3);
+  const hidden = relevant.length - shown.length;
+
   return (
-    <span
-      className={`rounded border px-1.5 py-0.5 text-xs ${
-        signal.needsReview
-          ? "border-border bg-review-bg text-review-text"
-          : "border-border bg-bg text-text"
-      }`}
-    >
-      {label}
-    </span>
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+      {shown.map((s) =>
+        s.needsReview ? (
+          <span
+            key={s.id}
+            className="rounded border border-border bg-review-bg px-1.5 py-0.5 text-xs text-review-text"
+          >
+            {s.label} (review)
+          </span>
+        ) : (
+          <span key={s.id} className="text-xs text-text-secondary">
+            {s.label}
+          </span>
+        )
+      )}
+      {hidden > 0 && <span className="text-xs text-text-secondary">+{hidden}</span>}
+    </div>
   );
 }
 
@@ -282,7 +288,7 @@ function ExpandedRow({ company }: { company: Company }) {
         </div>
         <p className="mt-3 text-sm text-text">{company.explanation}</p>
 
-        <h3 className="mb-1 mt-4 text-xs font-semibold text-text-secondary">Why this score</h3>
+        <h3 className="mb-1 mt-4 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">Why this score</h3>
         <ul className="text-sm">
           {company.rulesFired.map((r) => (
             <li key={r.rule} className="flex justify-between py-0.5">
@@ -296,7 +302,7 @@ function ExpandedRow({ company }: { company: Company }) {
           <span className="tabular-nums text-text">{total}</span>
         </div>
 
-        <h3 className="mb-1 mt-4 text-xs font-semibold text-text-secondary">Signals</h3>
+        <h3 className="mb-1 mt-4 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">Signals</h3>
         <ul className="space-y-1 text-sm">
           {company.signals.map((s) => (
             <li key={s.id} className="flex flex-wrap items-baseline gap-2">
@@ -324,7 +330,7 @@ function ExpandedRow({ company }: { company: Company }) {
       </div>
 
       <div>
-        <h3 className="mb-1 text-xs font-semibold text-text-secondary">Investigation</h3>
+        <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">Investigation</h3>
         {company.decisions.length === 0 ? (
           <p className="text-sm text-text-secondary">Scored on first pass</p>
         ) : (
@@ -338,7 +344,7 @@ function ExpandedRow({ company }: { company: Company }) {
           </ol>
         )}
 
-        <h3 className="mb-1 mt-4 text-xs font-semibold text-text-secondary">Draft email</h3>
+        <h3 className="mb-1 mt-4 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">Draft email</h3>
         <div className="relative rounded border border-border bg-bg p-3 pt-8">
           <button
             type="button"
