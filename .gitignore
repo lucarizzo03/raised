@@ -6,3 +6,5 @@ node_modules/
 .next/
 .gstack/
 *.tsbuildinfo
+/dashboard/test-results/
+/dashboard/playwright-report/
