@@ -39,7 +39,12 @@ async def _dedupe_against_db(companies: list[Company]) -> list[Company]:
     except Exception as exc:
         log.warning("db dedupe skipped: %s", exc)
         return companies
-    fresh = [c for c in companies if c.dedupe_key not in known]
+    from .fetch import normalize_name
+
+    fresh = [
+        c for c in companies
+        if c.dedupe_key not in known and normalize_name(c.name) not in known
+    ]
     log.info("db dedupe: %d new, %d already known", len(fresh), len(companies) - len(fresh))
     return fresh
 

@@ -21,8 +21,11 @@ def get_conn() -> psycopg.Connection:
 
 
 def known_dedupe_keys(conn: psycopg.Connection) -> set[str]:
-    rows = conn.execute("select dedupe_key from companies").fetchall()
-    return {r[0] for r in rows}
+    """Dedupe keys plus normalized names of every company already stored."""
+    rows = conn.execute(
+        "select dedupe_key, lower(regexp_replace(name, '[^a-zA-Z0-9]', '', 'g')) from companies"
+    ).fetchall()
+    return {k for r in rows for k in r if k}
 
 
 def upsert_company(conn: psycopg.Connection, c: Company) -> int:

@@ -41,7 +41,11 @@ export async function fetchDashboardData(): Promise<DashboardData> {
     companies: (companies.data ?? []) as RankedCompany[],
     signals: (signals.data ?? []) as SignalRow[],
     decisions: (decisions.data ?? []) as DecisionRow[],
-    runDate: companies.data?.[0]?.run_date ?? null,
+    runDate:
+      (companies.data as RankedCompany[] | null)
+        ?.map((c) => c.run_date)
+        .sort()
+        .at(-1) ?? null,
     isSampleData: false,
   };
 }

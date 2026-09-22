@@ -47,13 +47,17 @@ create table if not exists decisions (
 );
 create index if not exists decisions_company_idx on decisions(company_id);
 
--- Latest run's ranking, for the dashboard.
+-- Dashboard ranking: each company's most recent score. Companies are only
+-- judged once (dedupe skips known ones on later runs), so filtering to the
+-- latest run_date would drop everything from earlier days.
 create or replace view ranked_companies as
-select s.company_id, s.score, s.explanation, s.rules_fired, s.run_date,
+select distinct on (s.company_id)
+       s.company_id, s.score, s.explanation, s.rules_fired, s.run_date,
        c.name, c.domain, c.round, c.amount_raised, c.raised_date, c.first_seen
 from scores s
 join companies c on c.id = s.company_id
-where s.run_date = (select max(run_date) from scores);
+where c.raised_date is null or c.raised_date >= current_date - 90
+order by s.company_id, s.run_date desc;
 
 -- Read-only access for the dashboard via the anon key.
 alter table companies enable row level security;

@@ -64,16 +64,21 @@ async def extract_companies(items: list[FeedItem]) -> list[Company]:
     finally:
         await fetcher.close()
 
+    # Dedupe on domain AND normalized name: the extractor often guesses a
+    # different TLD for the same company across articles (acme.com / acme.ai).
     seen_keys: set[str] = set()
     companies: list[Company] = []
     for item, ext in zip(items, extractions):
         if ext is None or ext.not_funding_article or not ext.company_name:
             continue
         domain = normalize_domain(ext.domain)
-        key = domain or normalize_name(ext.company_name)
-        if not key or key in seen_keys:
+        name_key = normalize_name(ext.company_name)
+        key = domain or name_key
+        if not key or key in seen_keys or name_key in seen_keys:
             continue
         seen_keys.add(key)
+        if name_key:
+            seen_keys.add(name_key)
         companies.append(
             Company(
                 name=ext.company_name.strip(),
