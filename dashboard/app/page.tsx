@@ -17,7 +17,7 @@ export default async function Page() {
         </div>
         <p className="text-xs text-neutral-400">
           {data.isSampleData
-            ? "Sample data — set NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY"
+            ? "Sample data — set SUPABASE_URL / SUPABASE_ANON_KEY"
             : `Last updated: ${data.runDate ?? "never"}`}
         </p>
       </header>

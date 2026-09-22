@@ -105,7 +105,7 @@ Create the schema by running `schema.sql` in the Supabase SQL editor or
 ```bash
 cd dashboard
 npm install
-cp .env.local.example .env.local  # NEXT_PUBLIC_SUPABASE_URL + ANON_KEY
+cp .env.local.example .env.local  # SUPABASE_URL + SUPABASE_ANON_KEY (server-only)
 npm run dev
 ```
 
