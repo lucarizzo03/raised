@@ -1,37 +1,9 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where(.dark, .dark *));
-
 @theme {
-  /* Light: warm paper canvas, white panel floating above it. */
-  --color-canvas: #f6f5f2;
-  --color-surface: #ffffff;
-  --color-hover: #f2f1ec;
-  --color-border: #e7e5df;
-  --color-text: #16150f;
-  --color-text-secondary: #74726b;
-  --color-accent: #ff6600;
-  --color-accent-soft: #fff1e6;
-  --color-review-text: #9a5b06;
-  --color-review-bg: #fdefd1;
-  --color-logo-plate: #ffffff;
-  --color-initials-bg: #efeee9;
-
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 18px;
-
-  --shadow-sm: 0 1px 2px 0 rgb(22 21 15 / 0.05);
-  --shadow-md: 0 12px 32px -8px rgb(22 21 15 / 0.1), 0 2px 8px -2px rgb(22 21 15 / 0.05);
-
-  /* Apple-ish decelerating spring. Fast out of the gate, long soft settle. */
-  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-/* Dark is designed, not inverted: elevation comes from surfaces getting
-   lighter, text is off-white rather than pure white, and the accent is
-   lifted and desaturated so it does not vibrate against near-black. */
-.dark {
+  /* Dark only. Elevation comes from surfaces getting lighter, text is
+     off-white rather than pure white, and the accent is lifted and
+     desaturated so it does not vibrate against near-black. */
   --color-canvas: #08080a;
   --color-surface: #131316;
   --color-hover: #1d1d21;
@@ -42,19 +14,24 @@
   --color-accent-soft: #2a1a0c;
   --color-review-text: #f3c164;
   --color-review-bg: #38290d;
+  /* Light plate behind company logos: most are dark-on-transparent and
+     would disappear against the surfaces above. */
   --color-logo-plate: #f3f2ef;
   --color-initials-bg: #27272d;
 
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
   --shadow-md: 0 16px 40px -12px rgb(0 0 0 / 0.65), 0 2px 8px -2px rgb(0 0 0 / 0.45);
+
+  /* Apple-ish decelerating spring. Fast out of the gate, long soft settle. */
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @layer base {
   :root {
-    color-scheme: light;
-  }
-
-  .dark {
     color-scheme: dark;
   }
 
@@ -63,9 +40,9 @@
     color: var(--color-text);
   }
 
-  /* Colour changes ease rather than snap, so flipping themes and hovering
-     rows both feel continuous. Lives in the base layer so transition
-     utilities still win where a component needs something else. */
+  /* Colour changes ease rather than snap, so hover states feel continuous.
+     Lives in the base layer so transition utilities still win where a
+     component needs something else. */
   * {
     transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
   }

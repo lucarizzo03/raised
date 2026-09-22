@@ -1,5 +1,4 @@
 import CompanyTable from "@/components/CompanyTable";
-import ThemeToggle from "@/components/ThemeToggle";
 import { companies } from "@/lib/mock-data";
 
 export default function Page() {
@@ -20,10 +19,7 @@ export default function Page() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden text-xs text-text-secondary sm:block">Updated 3h ago</span>
-            <ThemeToggle />
-          </div>
+          <span className="text-xs text-text-secondary">Updated 3h ago</span>
         </div>
       </header>
 
