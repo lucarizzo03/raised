@@ -18,6 +18,10 @@ ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
 JUDGE_BACKEND = (os.environ.get("JUDGE_BACKEND") or "jev").strip().lower()
 
 CONFIDENCE_REVIEW_THRESHOLD = 0.7
+# The "needs review" flag bar per question. 0.7 suits yes/no questions (chance
+# is 0.5). ICP is a 5-step rubric (chance 0.2): 0.55 there already means Jev
+# strongly prefers one step, so 0.4 flags only the genuinely uninformed answers.
+REVIEW_THRESHOLDS = {"icp_fit": 0.4}
 # The genuine-raise / startup gate once answered "no" for every company. If it
 # would reject more than this share of a batch (of at least GATE_MIN_BATCH),
 # treat it as a model problem: log it and reject nobody.

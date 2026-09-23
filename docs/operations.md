@@ -59,7 +59,7 @@ For an overview, see the [README](../README.md).
 |---|---|
 | Secret | `ANTHROPIC_API_KEY` |
 | Secret | `TYPESAFE_API_KEY` |
-| Secret | `DATABASE_URL` |
+| Secret | `DATABASE_URL` (Supabase **Session pooler** URL; the direct host is IPv6-only and unreachable from GitHub) |
 | Variable | `EDGAR_USER_AGENT` (real SEC contact) |
 | Variable | `JUDGE_BACKEND` (optional; defaults to `jev`, set `llm` only to judge with Claude on purpose) |
 

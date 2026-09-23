@@ -71,6 +71,9 @@ function signalLabel(s: SignalRow): string {
     return `Hiring: ${parenValue(s.value) ?? "sales role"}`;
   }
   if (s.signal_type === "domain_unverified") return "Domain unverified";
+  if (s.signal_type === "technical_founders" && s.value.toLowerCase() === "unknown") {
+    return "Founders: unknown";
+  }
   return `${SIGNAL_LABELS[s.signal_type] ?? s.signal_type}: ${s.value}`;
 }
 

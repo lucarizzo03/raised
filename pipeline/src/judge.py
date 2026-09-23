@@ -5,7 +5,9 @@ Every judgment goes through `Judge`, an interface with two backends:
   - LLMBackend: Claude with JSON output. Only with an explicit JUDGE_BACKEND=llm.
 There is no automatic fallback between them.
 
-Any answer below CONFIDENCE_REVIEW_THRESHOLD is flagged needs_review.
+An answer below its question's review threshold (config.REVIEW_THRESHOLDS,
+default CONFIDENCE_REVIEW_THRESHOLD) is flagged needs_review. An "unknown"
+answer means missing data and is never flagged.
 """
 
 from __future__ import annotations
@@ -180,8 +182,11 @@ def _questions(**kwargs):
 # ---------------------------------------------------------------------------
 
 
-def _flag(confidence: float) -> bool:
-    return confidence < config.CONFIDENCE_REVIEW_THRESHOLD
+def _flag(signal_type: str, judgment: Judgment) -> bool:
+    if judgment.value == "unknown":
+        return False  # missing data, not a doubtful answer; nothing to review
+    threshold = config.REVIEW_THRESHOLDS.get(signal_type, config.CONFIDENCE_REVIEW_THRESHOLD)
+    return judgment.confidence < threshold
 
 
 def _company_state(company: Company) -> str:
@@ -341,9 +346,18 @@ async def judge_founders(company: Company) -> None:
         f"team/about page excerpt:\n{company.about_text[:2500]}"
     )
     questions = _questions(
+        # Many about pages never name the founders; "unknown" keeps that
+        # missing data from turning into a coin-flip yes/no.
         technical_founders=(
-            "noul",
-            {"instructions": "Do the founders appear to be technical (engineering, product, research backgrounds)?"},
+            "choice",
+            {
+                "instructions": "Do the founders appear to be technical (engineering, product, research backgrounds)?",
+                "criteria": {
+                    "yes": "The text names founders with engineering, product or research backgrounds",
+                    "no": "The text names founders, and their backgrounds are not technical",
+                    "unknown": "The text says nothing about who the founders are or their backgrounds",
+                },
+            },
         ),
         first_sales_hire=(
             "noul",
@@ -405,7 +419,7 @@ def _record(
             signal_type=signal_type,
             value=value,
             confidence=round(judgment.confidence, 3),
-            needs_review=_flag(judgment.confidence),
+            needs_review=_flag(signal_type, judgment),
             source_url=source_url,
         )
     )

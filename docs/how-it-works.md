@@ -76,7 +76,7 @@ SDK's default service configuration (no separate Jev version is pinned).
 |---|---|---|
 | Funding extraction | Claude | Article title, date and text → company, domain, round, USD amount, announcement date, investors, supporting quote (or `not_funding_article`) |
 | New-round check | Jev | Funding evidence + claimed round → is this a new round, not an older one? |
-| Company judgments | Jev | Company facts + enrichment → genuine raise, startup, B2B/B2C/Both/Unclear, round label, ICP fit |
+| Company judgments | Jev | Company facts + enrichment → genuine raise, startup, B2B/B2C/Both/Unclear, round label, ICP fit. What each answer changes: [README → What Jev decides](../README.md#what-jev-decides) |
 | Job classification | Jev | Job title, department, description → sales or not; AE, SDR, Head of Sales or Other |
 | Founder / first hire | Jev | About/team page → technical founder, first sales hire |
 | Investigation | Jev | Current evidence → `score_now`, `check_careers`, `search_news` or `fetch_about` |
@@ -97,8 +97,8 @@ Code: [extraction](../pipeline/src/extract.py) ·
 - **Jev** receives extracted fields plus short job, about/careers and news
   excerpts — not the full article.
 - Jev `Noul` answers become yes/no plus confidence; `Choice` gives categories;
-  `Score` gives the ICP position. Anything below **0.7** confidence is flagged
-  `needs_review`.
+  `Score` gives the ICP position. Anything below **0.7** confidence (**0.4**
+  for ICP fit) is flagged `needs_review`; "unknown" answers are never flagged.
 - **Jev judges, always.** A missing `TYPESAFE_API_KEY` or a Jev that won't
   start stops the run; it never falls back to Claude on its own. A one-call
   preflight checks the judge before extraction spends anything. Set
@@ -113,7 +113,9 @@ Code: [extraction](../pipeline/src/extract.py) ·
 
 ## Pipeline stages
 
-1. **Prepare** — apply migrations/settings and age out old companies.
+1. **Prepare** — check the Claude and Jev accounts with a one-token call each
+   (out of funds or a bad key stops the run here, before any database write),
+   then apply migrations/settings and age out old companies.
 2. **Discover** — TechCrunch venture/startups RSS; Google News for
    `raises Seed`, `raises Series A`, `raises Series B`; SEC EDGAR Form D
    full-text search. Dates are filtered before fetching. Google News redirect
