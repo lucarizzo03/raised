@@ -60,19 +60,53 @@ and anything under **0.7** (**0.4** for ICP fit, **0.5** for "sells to") is flag
 "needs review" on the dashboard. An "unknown" answer is missing data, not doubt,
 and is never flagged.
 
-| # | When | Jev decides | Answer | What the pipeline does with it |
-|---|---|---|---|---|
-| 1 | Screening | Is this article announcing a **new** round, not an old one? | yes / no | A confident "no" rejects the company (`not_new_round`) |
-| 2 | Company | Is this really a company raising money (not a bar, event or product launch)? | yes / no | A confident "no" rejects it (`not_startup_raise`) |
-| 3 | Company | Is it a venture-backed tech startup? | yes / no | A confident "no" rejects it (`not_startup_raise`) |
-| 4 | Company | Who does it sell to? | B2B / B2C / Both / Unclear | Confident B2C is hidden; B2B shows in the explanation |
-| 5 | Company | Which round is it? | Pre-seed / Seed / Series A / Series B / Later | Replaces Claude's label; Seed–Series B earns +15, "Later" with over $200M raised is hidden |
-| 6 | Company | How well does it fit the [ideal customer](#ideal-customer-icp)? | 0–4 (can be in between, e.g. 2.7) | 0–20 points |
-| 7 | Each sales-looking job | Is this a direct, quota-carrying sales role? | yes / no | Any "yes" earns +15; the titles show on the dashboard |
-| 8 | Each sales-looking job | What kind? | AE / SDR / Head of Sales / Other | "Other" overrides #7: the job doesn't count as sales |
-| 9 | About page | Are the founders technical? | yes / no / unknown | +10 for yes (scaled down below 0.7 confidence). "Unknown" (the page doesn't name the founders) scores nothing and shows "Founders: unknown" |
-| 10 | About page | Is this their first sales hire? | yes / no / unknown | +30 for yes, only if #7 found an open sales role (scaled down below 0.7 confidence). Jev sees the open role titles; "unknown" is only offered when none are open, and scores nothing |
-| 11 | Investigation | Enough evidence, or dig further? | score now / check careers / search news / fetch about page (only options not yet tried) | Gathers that evidence and re-asks #2–#6; at most 3 rounds |
+| # | When | Jev decides | Type | Answer | What the pipeline does with it |
+|---|---|---|---|---|---|
+| 1 | Screening | Is this article announcing a **new** round, not an old one? | Noul | yes / no | A confident "no" rejects the company (`not_new_round`) |
+| 2 | Company | Is this really a company raising money (not a bar, event or product launch)? | Noul | yes / no | A confident "no" rejects it (`not_startup_raise`) |
+| 3 | Company | Is it a venture-backed tech startup? | Noul | yes / no | A confident "no" rejects it (`not_startup_raise`) |
+| 4 | Company | Who does it sell to? | Choice | B2B / B2C / Both / Unclear | Confident B2C is hidden; B2B shows in the explanation |
+| 5 | Company | Which round is it? | Choice | Pre-seed / Seed / Series A / Series B / Later | Replaces Claude's label; Seed–Series B earns +15, "Later" with over $200M raised is hidden |
+| 6 | Company | How well does it fit the [ideal customer](#ideal-customer-icp)? | Score | 0–4 (can be in between, e.g. 2.7) | 0–20 points |
+| 7 | Each sales-looking job | Is this a direct, quota-carrying sales role? | Noul | yes / no | Any "yes" earns +15; the titles show on the dashboard |
+| 8 | Each sales-looking job | What kind? | Choice | AE / SDR / Head of Sales / Other | "Other" overrides #7: the job doesn't count as sales |
+| 9 | About page | Are the founders technical? | Choice | yes / no / unknown | +10 for yes (scaled down below 0.7 confidence). "Unknown" (the page doesn't name the founders) scores nothing and shows "Founders: unknown" |
+| 10 | About page | Is this their first sales hire? | Choice | yes / no / unknown | +30 for yes, only if #7 found an open sales role (scaled down below 0.7 confidence). Jev sees the open role titles; "unknown" is only offered when none are open, and scores nothing |
+| 11 | Investigation | Enough evidence, or dig further? | Choice | score now / check careers / search news / fetch about page (only options not yet tried) | Gathers that evidence and re-asks #2–#6; at most 3 rounds |
+
+### Jev's three question types
+
+Jev ("TypeSafe Jev", through the `langchain-typesafe` package) answers typed
+questions about a piece of text. Raised uses all three types:
+
+| Type | Use it for | What Jev returns | How Raised reads it |
+|---|---|---|---|
+| **Noul** | A yes/no question | The **probability the answer is yes** (0–1), nothing else | "yes" if the probability is 0.5 or more, else "no". Confidence is the probability of the side chosen, so it's never below 0.5 (0.9 yes → "yes, 0.9"; 0.2 yes → "no, 0.8") |
+| **Choice** | Picking one label from a list, in no particular order | The label, a probability for **every** label, and a confidence | The label and its confidence |
+| **Score** | A position on an ordered rubric (level 0, 1, 2 …) | The **expected** level (can be fractional, e.g. 2.7), a probability per level, and a confidence | The level and its confidence |
+
+- **Why some yes/no questions are Choice, not Noul:** a Noul can only say yes
+  or no. Technical founders (#9) and first sales hire (#10) need a third answer,
+  "unknown", for when the page simply doesn't say, so they're Choice questions
+  with `yes` / `no` / `unknown` labels.
+- **Several questions share one call.** Jev answers a whole set of questions
+  about the same text at once: #2–#6 in one call per company, #7–#8 in one call
+  per job, #9–#10 in one call per company, and #1 and #11 on their own. Before
+  each run, a one-question Noul checks that Jev is reachable and paid up.
+- **What Jev sees** is short text Raised assembles: the extracted funding facts,
+  plus job descriptions, about/careers page excerpts or news headlines as
+  relevant. Never the full article.
+
+**Jev can do more that Raised doesn't use yet:**
+- The **per-label and per-level probabilities** from Choice and Score (for
+  example, how much of a B2B/B2C answer is really "Both").
+- **Descriptions for the yes and no outcomes** of a Noul question
+  (`NoulCriteria`).
+- **Structured JSON input** instead of plain text.
+- **Token usage** per request, for tracking Jev's cost.
+- **Experimental agent middleware:** scoring the risk of an agent's tool calls
+  (`AutoModeMiddleware`) and routing requests between models
+  (`ModelRouterMiddleware`).
 
 **How the answers are used:**
 - **Rejections** (#1–#3) need a "no" with at least 0.7 confidence. #2–#3 are
