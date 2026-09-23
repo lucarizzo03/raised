@@ -64,8 +64,9 @@ Points are additive (max **120**) — not a percentage.
 | ICP fit | 0–20 |
 
 Automatically hidden: confident B2C companies, late-stage companies with more
-than $200M raised, and anything whose raise is older than 90 days. Hidden
-companies are kept in the database, never deleted.
+than $200M raised, records that clearly aren't a startup raising money, and
+anything whose raise is older than 90 days. Hidden companies are kept in the
+database, never deleted.
 
 Weights live in [`pipeline/src/config.py`](pipeline/src/config.py).
 

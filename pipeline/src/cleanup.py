@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 from . import config, dates, db, extract, judge
 from .fetch import Fetcher, normalize_name
 from .models import FeedItem
+from .resilience import run_each
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +42,9 @@ async def audit_existing():
             log.info("cleanup %s: %s", company.name, company.rejection_reason or "kept")
 
     try:
-        await asyncio.gather(*(audit(company) for company in companies))
+        _, failed = await run_each(companies, audit, stage="cleanup", label=lambda c: c.name)
     finally:
         await fetcher.close()
-    return companies
+    # A half-audited company keeps its stored state rather than being rewritten.
+    failed_ids = {id(c) for c in failed}
+    return [c for c in companies if id(c) not in failed_ids]

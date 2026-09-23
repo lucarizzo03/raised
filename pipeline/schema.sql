@@ -123,3 +123,6 @@ create policy anon_read_decisions on decisions for select to anon using (true);
 -- tables" is disabled in Data API settings).
 grant select on companies, signals, scores, decisions to anon;
 grant select on ranked_companies to anon;
+
+-- Anon lockdown for pipeline-only tables lives in migrations/002; run
+-- `run_pipeline migrate` after this file.

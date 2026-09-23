@@ -8,3 +8,4 @@ node_modules/
 *.tsbuildinfo
 /dashboard/test-results/
 /dashboard/playwright-report/
+PROD_PLAN.md

@@ -19,6 +19,11 @@ JUDGE_BACKEND = os.environ.get("JUDGE_BACKEND") or (
 )
 
 CONFIDENCE_REVIEW_THRESHOLD = 0.7
+# The genuine-raise / startup gate once answered "no" for every company. If it
+# would reject more than this share of a batch (of at least GATE_MIN_BATCH),
+# treat it as a model problem: log it and reject nobody.
+GATE_MAX_REJECT_RATE = 0.5
+GATE_MIN_BATCH = 4
 
 # --- Database ------------------------------------------------------------------
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -55,6 +60,16 @@ EDGAR_USER_AGENT = os.environ.get(
 HTTP_TIMEOUT = 20.0
 HTTP_MAX_CONCURRENCY = 10
 ARTICLE_TEXT_LIMIT = 12_000  # chars fed to the extraction model
+MAX_RESPONSE_BYTES = 5_000_000  # larger pages are dropped, not truncated mid-parse
+
+# --- Model calls ------------------------------------------------------------------
+MODEL_MAX_CONCURRENCY = 8  # shared by Claude and Jev
+MODEL_MAX_RETRIES = 4
+RETRY_BASE_DELAY = 1.0
+RETRY_MAX_DELAY = 30.0
+# More failures than this in one stage means the provider is down: abort the
+# run before persisting instead of writing a partial day.
+MAX_STAGE_FAILURE_RATE = 0.25
 
 # --- Investigation loop ----------------------------------------------------------
 MAX_INVESTIGATION_ROUNDS = 3

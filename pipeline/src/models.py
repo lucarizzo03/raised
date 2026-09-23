@@ -109,3 +109,6 @@ class Company(BaseModel):
     explanation: str = ""
     excluded: bool = False
     excluded_reason: str | None = None
+    # Set when a stage failed for this company; it is dropped from the run
+    # and never persisted. Not part of snapshots.
+    failed_stage: str | None = Field(default=None, exclude=True)

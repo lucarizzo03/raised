@@ -47,6 +47,17 @@ class PersistenceTests(unittest.TestCase):
         namespaces = self.conn.execute("select n.nspname from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.oid in ('companies'::regclass, 'ranked_companies'::regclass, 'pipeline_settings'::regclass)").fetchall()
         self.assertTrue(all(n[0].startswith("pg_temp_") for n in namespaces))
 
+    def test_heartbeat_is_set_by_runs_not_cleanup(self):
+        status = "select last_run_completed_at from pipeline_status"
+        db.persist_run([self.company()], self.today, write_scores=False)
+        self.assertIsNone(self.conn.execute(status).fetchone()[0])
+        db.persist_run([], self.today)  # a run that found nothing still counts
+        self.assertIsNotNone(self.conn.execute(status).fetchone()[0])
+
+    def test_rejected_companies_has_row_level_security(self):
+        enabled = self.conn.execute("select relrowsecurity from pg_class where oid = 'rejected_companies'::regclass").fetchone()[0]
+        self.assertTrue(enabled)
+
     def test_age_out_retains_company_and_score(self):
         c = self.company()
         db.persist_run([c], self.today)

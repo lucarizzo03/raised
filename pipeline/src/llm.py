@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from . import config
+from .resilience import _per_loop, model_slots
 
 log = logging.getLogger(__name__)
 
@@ -21,24 +22,33 @@ def _parse_json(text: str) -> dict[str, Any]:
     return json.loads(text)
 
 
-async def complete_json(system: str, user: str, max_tokens: int = 1500, *, schema: dict | None = None) -> dict[str, Any]:
-    """One call that must return a JSON object."""
+def _make_client():
     import anthropic
 
-    client = anthropic.AsyncAnthropic()
+    # The SDK retries 429/529/5xx/timeouts itself and honors retry-after.
+    return anthropic.AsyncAnthropic(max_retries=config.MODEL_MAX_RETRIES)
+
+
+_client = _per_loop(_make_client)
+
+
+async def complete_json(system: str, user: str, max_tokens: int = 1500, *, schema: dict | None = None) -> dict[str, Any]:
+    """One call that must return a JSON object."""
+    client = _client()
     options = {}
     if schema is not None:
         options = {
             "tools": [{"name": "return_json", "description": "Return the extracted funding announcement.", "input_schema": schema}],
             "tool_choice": {"type": "tool", "name": "return_json"},
         }
-    resp = await client.messages.create(
-        model=config.ANTHROPIC_MODEL,
-        max_tokens=max_tokens,
-        system=system + ("\nReturn the result using return_json." if schema is not None else "\nRespond with a single JSON object and nothing else."),
-        messages=[{"role": "user", "content": user}],
-        **options,
-    )
+    async with model_slots():
+        resp = await client.messages.create(
+            model=config.ANTHROPIC_MODEL,
+            max_tokens=max_tokens,
+            system=system + ("\nReturn the result using return_json." if schema is not None else "\nRespond with a single JSON object and nothing else."),
+            messages=[{"role": "user", "content": user}],
+            **options,
+        )
     if schema is not None:
         for block in resp.content:
             if block.type == "tool_use" and block.name == "return_json" and isinstance(block.input, dict):

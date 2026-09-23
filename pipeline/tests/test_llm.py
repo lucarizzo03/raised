@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from src import llm
+from src import config, llm
 
 
 class StructuredExtractionTests(unittest.IsolatedAsyncioTestCase):
@@ -22,6 +22,14 @@ class StructuredExtractionTests(unittest.IsolatedAsyncioTestCase):
         with patch("anthropic.AsyncAnthropic", return_value=client):
             with self.assertRaises(ValueError):
                 await llm.complete_json("Extract", "Article", schema={"type":"object"})
+
+    async def test_client_is_reused_with_sdk_retries(self):
+        response = SimpleNamespace(content=[SimpleNamespace(type="text", text='{"a": 1}')])
+        client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock(return_value=response)))
+        with patch("anthropic.AsyncAnthropic", return_value=client) as factory:
+            await llm.complete_json("s", "u")
+            await llm.complete_json("s", "u")
+        factory.assert_called_once_with(max_retries=config.MODEL_MAX_RETRIES)
 
     def test_legacy_json_parser_is_preserved(self):
         self.assertEqual(llm._parse_json('```json\n{"answer":"yes"}\n```'), {"answer":"yes"})

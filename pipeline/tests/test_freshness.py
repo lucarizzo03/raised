@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 from urllib.parse import unquote
 
 from src import config, dates, extract, feeds, judge
-from src.models import Company, FeedItem, FundingExtraction, Round, Signal
+from src.models import Company, FeedItem, Signal
 
 
 class FreshnessTests(unittest.TestCase):

@@ -5,9 +5,16 @@ import { exactTime, relativeTime } from "@/lib/format";
 // Always re-read Postgres so "last updated" and the ranking stay current.
 export const dynamic = "force-dynamic";
 
+// The pipeline runs daily; past this, say so instead of looking current.
+const STALE_AFTER_MS = 36 * 60 * 60 * 1000;
+
 export default async function Page() {
-  const { companies, lastUpdated, isSampleData } = await fetchDashboardData();
-  const relative = relativeTime(lastUpdated);
+  const { companies, lastUpdated, lastRunAt, isSampleData } = await fetchDashboardData();
+  // Prefer the pipeline's heartbeat; fall back to the newest signal.
+  const updatedAt = lastRunAt ?? lastUpdated;
+  const relative = relativeTime(updatedAt);
+  const stale =
+    !isSampleData && lastRunAt !== null && Date.now() - new Date(lastRunAt).getTime() > STALE_AFTER_MS;
 
   return (
     <div className="min-h-screen">
@@ -27,14 +34,19 @@ export default async function Page() {
             </div>
           </div>
           <span
-            className="w-full whitespace-nowrap pl-10 text-xs text-text-secondary sm:w-auto sm:shrink-0 sm:pl-0"
-            title={exactTime(lastUpdated)}
+            className={`w-full whitespace-nowrap pl-10 text-xs sm:w-auto sm:shrink-0 sm:pl-0 ${
+              stale ? "text-review-text" : "text-text-secondary"
+            }`}
+            title={exactTime(updatedAt)}
+            data-stale={stale || undefined}
           >
             {isSampleData
               ? "Sample data"
-              : relative
-                ? `Updated ${relative}`
-                : "Never updated"}
+              : stale
+                ? `Last run ${relative} · pipeline may be stalled`
+                : relative
+                  ? `Updated ${relative}`
+                  : "Never updated"}
           </span>
         </div>
       </header>

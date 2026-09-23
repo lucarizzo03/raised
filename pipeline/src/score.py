@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
-
 from . import config
+from .dates import now_utc
 from .models import Company
 
 _WEIGHTS = config.SCORING_WEIGHTS
@@ -29,7 +28,9 @@ def _has_sales_role(company: Company) -> bool:
 def _days_since_raise(company: Company) -> int | None:
     if not company.raised_date:
         return None
-    return (date.today() - company.raised_date).days
+    # UTC, like every other date rule; local time made the ramp and the
+    # display window disagree by a day around midnight.
+    return (now_utc().date() - company.raised_date).days
 
 
 def icp_points(company: Company) -> tuple[int, float | None]:
