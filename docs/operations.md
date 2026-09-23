@@ -1,7 +1,7 @@
 # Operating Raised
 
 Setup gotchas, deployment, testing and known limitations.
-For the basic setup, see the [README](../README.md#quick-start).
+For an overview, see the [README](../README.md).
 
 - [Setup notes](#setup-notes)
 - [Deployment](#deployment)

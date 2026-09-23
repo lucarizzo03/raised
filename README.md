@@ -8,7 +8,6 @@ them for outreach.
 > **Claude extracts. Jev judges. Python scores. Supabase stores. Next.js displays.**
 
 - [How it works](#how-it-works)
-- [Quick start](#quick-start)
 - [Commands](#commands)
 - [Scoring](#scoring)
 - [Testing](#testing)
@@ -50,56 +49,6 @@ flowchart LR
 
 **Stack:** Python 3.12 · Anthropic SDK · TypeSafe Jev · Supabase Postgres ·
 Next.js 16 · React 19 · Tailwind 4 · Vercel · GitHub Actions
-
----
-
-## Quick start
-
-**You need:** Python 3.12, Node.js 22+, a Supabase project, an Anthropic API key
-and a TypeSafe API key.
-
-### 1. Pipeline
-
-```bash
-python3.12 -m venv .venv
-.venv/bin/pip install -r pipeline/requirements.txt
-cp -n pipeline/.env.example pipeline/.env   # then fill it in
-```
-
-| Variable | Required | Purpose |
-|---|:---:|---|
-| `DATABASE_URL` | ✓ | Postgres connection (needs write access) |
-| `ANTHROPIC_API_KEY` | ✓ | Claude extraction |
-| `TYPESAFE_API_KEY` | ✓ | Jev judgments |
-| `EDGAR_USER_AGENT` | ✓ | Your app name + contact email, required by the SEC |
-| `ANTHROPIC_MODEL` | | Override the Claude model |
-| `JUDGE_BACKEND` | | `jev` or `llm` |
-
-### 2. Database
-
-For a **new** database, run [`pipeline/schema.sql`](pipeline/schema.sql) in the
-Supabase SQL editor, then:
-
-```bash
-cd pipeline
-../.venv/bin/python run_pipeline migrate
-../.venv/bin/python run_pipeline --backfill   # one-time 30-day seed
-```
-
-For an **existing** database, just run `migrate` (never re-run the schema).
-
-### 3. Dashboard
-
-From the repo root:
-
-```bash
-cd dashboard
-npm ci
-cp -n .env.local.example .env.local   # set SUPABASE_URL and SUPABASE_ANON_KEY
-npm run dev
-```
-
-Without Supabase credentials, the dashboard shows bundled **sample data**.
 
 ---
 
@@ -180,10 +129,3 @@ Details: [docs/operations.md](docs/operations.md#deployment).
 |---|---|
 | [docs/how-it-works.md](docs/how-it-works.md) | Pipeline stages, model behavior, date windows, rejection rules, scoring formulas, database tables |
 | [docs/operations.md](docs/operations.md) | Setup gotchas, deployment, testing, known limitations |
-
-```text
-pipeline/    Python pipeline, schema, migrations and tests
-dashboard/   Next.js dashboard and Playwright tests
-.github/     Daily pipeline and dashboard CI workflows
-docs/        Detailed reference
-```
