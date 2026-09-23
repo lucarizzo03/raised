@@ -12,11 +12,10 @@ load_dotenv()
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
 
 # --- Judge backend -------------------------------------------------------------
-# "jev" uses TypeSafe Jev via langchain-typesafe (needs TYPESAFE_API_KEY).
-# "llm" uses the LLM provider above with structured JSON output.
-JUDGE_BACKEND = os.environ.get("JUDGE_BACKEND") or (
-    "jev" if os.environ.get("TYPESAFE_API_KEY") else "llm"
-)
+# Jev judges, by design. "llm" (Claude with JSON output) is an explicit opt-in
+# only: a missing key or a Jev that won't start stops the run instead of
+# quietly moving every judgment onto the Anthropic bill.
+JUDGE_BACKEND = (os.environ.get("JUDGE_BACKEND") or "jev").strip().lower()
 
 CONFIDENCE_REVIEW_THRESHOLD = 0.7
 # The genuine-raise / startup gate once answered "no" for every company. If it
@@ -30,6 +29,9 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 # --- Feeds ---------------------------------------------------------------------
 INGEST_WINDOW_DAYS = 3
+# processed_articles rows older than this are pruned; comfortably past the
+# longest lookback (backfill), so a pruned URL can never reappear in a feed.
+PROCESSED_ARTICLE_RETENTION_DAYS = 60
 DISPLAY_WINDOW_DAYS = 90
 BACKFILL_WINDOW_DAYS = 30
 MAX_ARTICLE_LAG_DAYS = 7
@@ -70,6 +72,11 @@ RETRY_MAX_DELAY = 30.0
 # More failures than this in one stage means the provider is down: abort the
 # run before persisting instead of writing a partial day.
 MAX_STAGE_FAILURE_RATE = 0.25
+
+# --- Job classification -----------------------------------------------------------
+# Only titles that look like sales are sent to the classifier, and at most this
+# many per company. A 348-role board was half of one run's classification calls.
+MAX_JOBS_CLASSIFIED_PER_COMPANY = 20
 
 # --- Investigation loop ----------------------------------------------------------
 MAX_INVESTIGATION_ROUNDS = 3

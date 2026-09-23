@@ -54,6 +54,15 @@ class PersistenceTests(unittest.TestCase):
         db.persist_run([], self.today)  # a run that found nothing still counts
         self.assertIsNotNone(self.conn.execute(status).fetchone()[0])
 
+    def test_processed_articles_are_saved_read_back_and_pruned(self):
+        db.persist_run([self.company()], self.today, processed_articles={"https://news.example.com/op-ed": "not_funding"})
+        known = db.known_article_urls()
+        self.assertIn("https://news.example.com/op-ed", known)
+        self.assertIn("https://example.com/article", known)  # company source, normalized
+        self.conn.execute("update processed_articles set first_seen = now() - interval '61 days'")
+        db.persist_run([], self.today)
+        self.assertEqual(self.conn.execute("select count(*) from processed_articles").fetchone()[0], 0)
+
     def test_rejected_companies_has_row_level_security(self):
         enabled = self.conn.execute("select relrowsecurity from pg_class where oid = 'rejected_companies'::regclass").fetchone()[0]
         self.assertTrue(enabled)

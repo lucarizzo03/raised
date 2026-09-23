@@ -6,7 +6,7 @@ import asyncio
 import ipaddress
 import logging
 import re
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -127,6 +127,21 @@ def normalize_domain(raw: str | None) -> str | None:
     if host.startswith("www."):
         host = host[4:]
     return host or None
+
+
+_TRACKING_PARAMS = ("utm_", "fbclid", "gclid", "mc_cid", "mc_eid", "ref", "guccounter")
+
+
+def normalize_url(url: str) -> str:
+    """Stable key for 'have we processed this article': lowercase scheme/host,
+    no www, fragment or tracking params, no trailing slash."""
+    parts = urlparse(url.strip())
+    host = parts.netloc.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    query = urlencode([(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+                       if not k.lower().startswith(_TRACKING_PARAMS)])
+    return urlunparse((parts.scheme.lower() or "https", host, parts.path.rstrip("/") or "/", "", query, ""))
 
 
 def normalize_name(name: str) -> str:

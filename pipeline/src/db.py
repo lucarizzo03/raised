@@ -82,6 +82,17 @@ def dashboard_summary() -> dict:
     return {"companies": count, "oldest_raise": str(oldest) if oldest else None, "newest_raise": str(newest) if newest else None}
 
 
+def known_article_urls() -> set[str]:
+    """Normalized URLs whose outcome is final, plus every stored company's
+    source article (covers rows saved before processed_articles existed)."""
+    from .fetch import normalize_url
+
+    with get_conn() as conn:
+        processed = {r[0] for r in conn.execute("select url from processed_articles")}
+        sources = conn.execute("select source_url from companies where coalesce(source_url, '') <> ''").fetchall()
+    return processed | {normalize_url(r[0]) for r in sources}
+
+
 def known_dedupe_keys(conn: psycopg.Connection) -> set[str]:
     """Dedupe keys plus normalized names of every company already stored."""
     rows = conn.execute(
@@ -131,7 +142,15 @@ def _rejection_confidence(c: Company) -> float:
     return signal.confidence if signal else 0.0
 
 
-def persist_run(companies: list[Company], run_date: date, *, backfill: bool = False, write_scores: bool = True) -> dict:
+def persist_run(
+    companies: list[Company],
+    run_date: date,
+    *,
+    backfill: bool = False,
+    write_scores: bool = True,
+    processed_articles: dict[str, str] | None = None,
+) -> dict:
+    """Everything in one transaction: an aborted run marks no article processed."""
     added = rejected = 0
     with get_conn() as conn, conn.transaction():
         if backfill:
@@ -192,6 +211,16 @@ def persist_run(companies: list[Company], run_date: date, *, backfill: bool = Fa
                 """,
                 (c.id, c.score, c.explanation, json.dumps(c.rules_fired), run_date),
             )
+        if processed_articles:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "insert into processed_articles (url, outcome) values (%s, %s) on conflict (url) do nothing",
+                    list(processed_articles.items()),
+                )
+        conn.execute(
+            "delete from processed_articles where first_seen < now() - make_interval(days => %s)",
+            (config.PROCESSED_ARTICLE_RETENTION_DAYS,),
+        )
         aged = age_out(conn, run_date)
         if write_scores:  # a real run, not cleanup; committed with its results
             conn.execute("update pipeline_settings set last_run_completed_at=now() where singleton")

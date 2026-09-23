@@ -61,7 +61,7 @@ For an overview, see the [README](../README.md).
 | Secret | `TYPESAFE_API_KEY` |
 | Secret | `DATABASE_URL` |
 | Variable | `EDGAR_USER_AGENT` (real SEC contact) |
-| Variable | `JUDGE_BACKEND` (normally `jev`) |
+| Variable | `JUDGE_BACKEND` (optional; defaults to `jev`, set `llm` only to judge with Claude on purpose) |
 
 - The job installs hash-pinned dependencies, runs unit tests, then
   `python -m src.main run -v`. It never backfills.

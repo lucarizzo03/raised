@@ -1,9 +1,9 @@
 """Judgment layer. Jev only ever sees extracted fields, never raw articles.
 
 Every judgment goes through `Judge`, an interface with two backends:
-  - JevBackend: TypeSafe Jev via langchain-typesafe (TYPESAFE_API_KEY).
-  - LLMBackend: the configured LLM with structured JSON output.
-JUDGE_BACKEND=jev|llm selects it; default is jev when the key exists.
+  - JevBackend: TypeSafe Jev via langchain-typesafe (TYPESAFE_API_KEY). Default.
+  - LLMBackend: Claude with JSON output. Only with an explicit JUDGE_BACKEND=llm.
+There is no automatic fallback between them.
 
 Any answer below CONFIDENCE_REVIEW_THRESHOLD is flagged needs_review.
 """
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 
 from . import config, llm
@@ -113,13 +114,26 @@ class LLMBackend:
         return spec
 
 
+class JudgeBackendError(RuntimeError):
+    """The configured judge can't be used; the run must stop, not switch models."""
+
+
 def _backend():
-    if config.JUDGE_BACKEND == "jev":
-        try:
-            return JevBackend()
-        except Exception as exc:
-            log.warning("Jev backend unavailable (%s); falling back to LLM", exc)
-    return LLMBackend()
+    choice = config.JUDGE_BACKEND
+    if choice == "llm":
+        log.warning("JUDGE_BACKEND=llm: judgments run on Claude, not Jev")
+        return LLMBackend()
+    if choice != "jev":
+        raise JudgeBackendError(f"JUDGE_BACKEND must be 'jev' or 'llm', got {choice!r}")
+    if not os.environ.get("TYPESAFE_API_KEY"):
+        raise JudgeBackendError(
+            "Jev does the judging, but TYPESAFE_API_KEY is not set. Set it, or set "
+            "JUDGE_BACKEND=llm to judge with Claude on purpose."
+        )
+    try:
+        return JevBackend()
+    except Exception as exc:
+        raise JudgeBackendError(f"Jev backend failed to start: {exc}") from exc
 
 
 _BACKEND = None
@@ -131,6 +145,18 @@ def backend():
         _BACKEND = _backend()
         log.info("judge backend: %s", type(_BACKEND).__name__)
     return _BACKEND
+
+
+async def preflight() -> None:
+    """One tiny judgment before any paid work, so a bad key or an unreachable
+    judge stops the run before extraction spends anything."""
+    answers = await backend().ask(
+        "company: Preflight Inc\nclaimed round: seed",
+        _questions(ok=("noul", {"instructions": "Is this a company record?"})),
+    )
+    if "ok" not in answers:
+        raise JudgeBackendError(f"{type(backend()).__name__} preflight returned no answer")
+    log.info("judge preflight ok: %s", type(backend()).__name__)
 
 
 def _questions(**kwargs):
@@ -412,8 +438,14 @@ def gate_reason(company: Company) -> str | None:
 
 
 async def _judge_company_and_jobs(company: Company) -> None:
+    from .jobs import sales_candidates
+
     await judge_company(company)
-    await asyncio.gather(*(judge_job(company, j) for j in company.jobs))
+    # Non-sales titles only ever produced "no" signals, which nothing scores on.
+    candidates = sales_candidates(company.jobs)
+    if len(candidates) < len(company.jobs):
+        log.info("%s: classifying %d of %d jobs", company.name, len(candidates), len(company.jobs))
+    await asyncio.gather(*(judge_job(company, j) for j in candidates))
 
 
 async def judge_all(companies: list[Company]) -> None:

@@ -41,7 +41,7 @@ flowchart LR
 | Step | Handled by |
 |---|---|
 | Funding extraction | Claude Sonnet 4.5 (`claude-sonnet-4-5`) |
-| Company, job and founder judgments | TypeSafe Jev (falls back to Claude if Jev can't start) |
+| Company, job and founder judgments | TypeSafe Jev (the run stops if Jev is unavailable) |
 | Scoring and explanations | Plain Python — no model |
 | Email drafts | Fixed TypeScript template — no model |
 

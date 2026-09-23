@@ -74,6 +74,7 @@ jobs:
             "insert into companies(name, dedupe_key) values ('x','x')" \
             "delete from signals" \
             "select * from pipeline_settings" \
+            "select * from processed_articles" \
             "update pipeline_status set last_run_completed_at = now()"; do
             if psql "$DATABASE_URL" -c "set role anon; $stmt" 2>/dev/null; then
               echo "anon was allowed: $stmt"; exit 1

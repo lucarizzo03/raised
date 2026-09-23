@@ -25,13 +25,25 @@ from .resilience import run_each
 log = logging.getLogger(__name__)
 
 
-async def _discover(mock: bool, window_days: int = config.INGEST_WINDOW_DAYS) -> list[Company]:
+async def _discover(
+    mock: bool,
+    window_days: int = config.INGEST_WINDOW_DAYS,
+    outcomes: dict[str, str] | None = None,
+) -> list[Company]:
     from . import extract, feeds
+    from .fetch import normalize_url
 
     if mock:
         return _mock_companies()
     items = await feeds.fetch_all_feeds(window_days)
-    return await extract.extract_companies(items, window_days)
+    try:
+        known = db.known_article_urls()
+    except Exception as exc:
+        log.warning("processed-article skip unavailable: %s", exc)
+        known = set()
+    fresh = [i for i in items if normalize_url(i.url) not in known]
+    log.info("processed articles: skipping %d already processed, %d new", len(items) - len(fresh), len(fresh))
+    return await extract.extract_companies(fresh, window_days, outcomes)
 
 
 async def _dedupe_against_db(companies: list[Company]) -> list[Company]:
@@ -159,7 +171,10 @@ async def main(argv: list[str] | None = None) -> None:
         print("date-window migration applied")
         return
     if args.command == "cleanup":
+        from . import judge
         from .cleanup import audit_existing
+
+        await judge.preflight()
 
         companies = await audit_existing()
         result = db.persist_run(companies, today, write_scores=False)
@@ -179,9 +194,12 @@ async def main(argv: list[str] | None = None) -> None:
 
     from . import investigate, jobs as jobs_mod, judge, score
 
+    if not args.mock_models and args.command != "discover":
+        await judge.preflight()  # fail on the judge before paying for extraction
     window_days = config.BACKFILL_WINDOW_DAYS if args.backfill else config.INGEST_WINDOW_DAYS
     log.info("pipeline mode=%s window_days=%d", "backfill" if args.backfill else "daily", window_days)
-    companies = await _discover(args.mock_models, window_days)
+    outcomes: dict[str, str] = {}
+    companies = await _discover(args.mock_models, window_days, outcomes)
     companies = await _dedupe_against_db(companies)
 
     if args.command == "discover":
@@ -216,6 +234,12 @@ async def main(argv: list[str] | None = None) -> None:
 
     if not args.mock_models:
         await investigate.investigate_all(eligible)
+    # A company that failed a stage is retried next run, so its article must
+    # not be marked processed.
+    from .fetch import normalize_url
+
+    retry_urls = {normalize_url(c.source_url) for c in companies if c.failed_stage and c.source_url}
+    processed = {url: outcome for url, outcome in outcomes.items() if url not in retry_urls}
     companies = _without_failed(companies)
     eligible = _without_failed(eligible)
     ranked = score.rank(eligible)  # scores everything, returns the visible set
@@ -230,7 +254,7 @@ async def main(argv: list[str] | None = None) -> None:
     if args.command == "run":
         # Excluded companies stay on record with the flag set; only the
         # ranking hides them.
-        result = db.persist_run(companies, today, backfill=args.backfill)
+        result = db.persist_run(companies, today, backfill=args.backfill, processed_articles=processed)
         print(f"persisted run {today} ({len(ranked)} ranked, {len(excluded)} excluded)")
         print(f"{'Backfill' if args.backfill else 'Daily'}: {result}")
         print(f"Dashboard: {db.dashboard_summary()}")

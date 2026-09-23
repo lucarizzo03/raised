@@ -80,7 +80,7 @@ SDK's default service configuration (no separate Jev version is pinned).
 | Job classification | Jev | Job title, department, description → sales or not; AE, SDR, Head of Sales or Other |
 | Founder / first hire | Jev | About/team page → technical founder, first sales hire |
 | Investigation | Jev | Current evidence → `score_now`, `check_careers`, `search_news` or `fetch_about` |
-| Fallback judgments | Claude | Same questions via `LLMBackend`, when selected or when Jev fails to start |
+| Alternative judge (opt-in) | Claude | Same questions via `LLMBackend`, only with an explicit `JUDGE_BACKEND=llm` |
 | Score, explanation, email, logos | No model | Python, a TypeScript template and favicon lookup |
 
 Code: [extraction](../pipeline/src/extract.py) ·
@@ -99,11 +99,11 @@ Code: [extraction](../pipeline/src/extract.py) ·
 - Jev `Noul` answers become yes/no plus confidence; `Choice` gives categories;
   `Score` gives the ICP position. Anything below **0.7** confidence is flagged
   `needs_review`.
-- **Backend selection:** `JUDGE_BACKEND=jev|llm`. If unset, Jev is used when
-  `TYPESAFE_API_KEY` exists, otherwise Claude. `ANTHROPIC_MODEL` overrides the
-  Claude model.
-- Fallback to Claude only happens **when the Jev backend starts up**, not on
-  individual failed Jev requests.
+- **Jev judges, always.** A missing `TYPESAFE_API_KEY` or a Jev that won't
+  start stops the run; it never falls back to Claude on its own. A one-call
+  preflight checks the judge before extraction spends anything. Set
+  `JUDGE_BACKEND=llm` only to judge with Claude on purpose.
+- `ANTHROPIC_MODEL` overrides the Claude model used for extraction.
 - **Failures:** at most 8 model calls run at once. Rate limits, overloads and
   timeouts are retried with backoff. A company that still fails is skipped for
   the run; if over 25% of a stage fails, the run aborts before writing
@@ -117,7 +117,9 @@ Code: [extraction](../pipeline/src/extract.py) ·
 2. **Discover** — TechCrunch venture/startups RSS; Google News for
    `raises Seed`, `raises Series A`, `raises Series B`; SEC EDGAR Form D
    full-text search. Dates are filtered before fetching. Google News redirect
-   URLs are decoded with `googlenewsdecoder`.
+   URLs are decoded with `googlenewsdecoder`. Articles already processed on an
+   earlier run (see `processed_articles`) are skipped before fetching, so each
+   article is paid for once rather than on every day of the 3-day lookback.
 3. **Extract** — fetch the article, prefer the publisher's original date over
    the feed date, recheck the window, and call Claude.
 4. **Identity** — pick domain candidates from the article and check the homepage
@@ -126,7 +128,8 @@ Code: [extraction](../pipeline/src/extract.py) ·
 5. **Screen** — new-round check plus deterministic date/evidence rules.
 6. **Enrich and judge** — guess job-board slugs and try
    **Ashby → Greenhouse → Lever**, stopping at the first non-empty list. Jev
-   judges the company and each job.
+   judges the company, and each job whose title or department looks like sales
+   (at most 20 per company). Other jobs only count toward "open roles".
 7. **Investigate** — prefetch `/about`, `/team`, `/about-us` or `/company`; Jev
    decides whether to score or gather more (`/careers`, `/jobs`, news). At most
    **3 enrichment rounds**. Founder/first-hire judgments run afterwards.
@@ -212,6 +215,7 @@ Additive points, max **120**. Values are in `SCORING_WEIGHTS` in
 | `rejected_companies` | Rejection/quarantine history with snapshots |
 | `pipeline_settings` | Display window, one-time backfill status and last successful run |
 | `pipeline_status` | Read-only view of the last successful run time, for the dashboard |
+| `processed_articles` | Article URLs with a final outcome, skipped on later runs; pruned after 60 days |
 | `ranked_companies` | Each company's latest score, filtered for display |
 
 `ranked_companies` hides excluded companies, raises outside the display window,

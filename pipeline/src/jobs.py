@@ -5,11 +5,35 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
+from . import config
 from .fetch import Fetcher, domain_stem, normalize_name
 from .models import Company, JobPosting
 
 log = logging.getLogger(__name__)
+
+# Deliberately broad: this only decides which titles are worth a model call;
+# the classifier still makes the sales / not-sales judgment.
+_SALES_TITLE = re.compile(
+    r"\b(sales|account executive|account exec|ae|sdr|bdr|adr|business development|"
+    r"revenue|cro|go[- ]to[- ]market|gtm|commercial|partnerships?|"
+    r"account (manager|director|lead)|seller|deal desk|pre-?sales)\b",
+    re.IGNORECASE,
+)
+_SALES_DEPARTMENT = re.compile(r"\b(sales|revenue|go[- ]to[- ]market|gtm|business development)\b", re.IGNORECASE)
+
+
+def sales_candidates(jobs: list[JobPosting]) -> list[JobPosting]:
+    """Jobs worth classifying: sales-looking title or department, capped.
+
+    Title matches rank ahead of department-only ones, so the cap keeps an
+    "Account Executive" over a "Finance Director" filed under GTM.
+    """
+    by_title = [j for j in jobs if _SALES_TITLE.search(j.title or "")]
+    title_ids = {id(j) for j in by_title}
+    by_department = [j for j in jobs if id(j) not in title_ids and _SALES_DEPARTMENT.search(j.department or "")]
+    return (by_title + by_department)[: config.MAX_JOBS_CLASSIFIED_PER_COMPANY]
 
 
 def slug_candidates(company: Company) -> list[str]:

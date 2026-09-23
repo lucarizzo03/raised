@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from . import config, domains, llm
 from .dates import article_publication_date, now_utc
-from .fetch import Fetcher, normalize_name
+from .fetch import Fetcher, normalize_name, normalize_url
 from .models import Company, FeedItem, FundingExtraction, Signal
 from .resilience import run_each
 
@@ -69,8 +69,18 @@ async def extract_one(item: FeedItem) -> FundingExtraction | None:
         return None
 
 
-async def extract_companies(items: list[FeedItem], window_days: int = config.INGEST_WINDOW_DAYS) -> list[Company]:
-    """Fetch article bodies, extract, resolve + verify domains, dedupe."""
+async def extract_companies(
+    items: list[FeedItem],
+    window_days: int = config.INGEST_WINDOW_DAYS,
+    outcomes: dict[str, str] | None = None,
+) -> list[Company]:
+    """Fetch article bodies, extract, resolve + verify domains, dedupe.
+
+    `outcomes` collects {normalized url: outcome} for every article whose
+    result is final. Fetch and extraction failures are left out so they are
+    retried next run.
+    """
+    outcomes = {} if outcomes is None else outcomes
     fetcher = Fetcher()
     try:
         await asyncio.gather(
@@ -80,10 +90,22 @@ async def extract_companies(items: list[FeedItem], window_days: int = config.ING
         cutoff = today - timedelta(days=window_days)
         recent = [i for i in items if i.published and cutoff <= i.published <= today]
         log.info("article publication recheck: kept=%d skipped=%d", len(recent), len(items) - len(recent))
+        recent_ids = {id(i) for i in recent}
+        for item in items:
+            if item.text and id(item) not in recent_ids:
+                outcomes[normalize_url(item.url)] = "out_of_window"
         items = recent
         # Model concurrency is capped inside llm; a failed article is skipped
         # unless so many fail that the provider must be down.
-        extractions, _ = await run_each(items, extract_one, stage="extract", label=lambda i: i.url)
+        extractions, failed = await run_each(items, extract_one, stage="extract", label=lambda i: i.url)
+        failed_ids = {id(i) for i in failed}
+        for item, ext in zip(items, extractions, strict=True):
+            if id(item) in failed_ids or not item.text:
+                continue  # retry next run
+            if ext is None:
+                outcomes[normalize_url(item.url)] = "invalid_extraction"
+            elif ext.not_funding_article or not ext.company_name:
+                outcomes[normalize_url(item.url)] = "not_funding"
 
         # Resolve a domain from the article itself. Never from the name.
         pending: list[tuple[FeedItem, FundingExtraction, str | None, str]] = []
@@ -121,7 +143,9 @@ async def extract_companies(items: list[FeedItem], window_days: int = config.ING
             domain, source = None, f"{source}_unverified"
         key = domain if (domain and ok) else name_key
         if not key or key in seen_keys or name_key in seen_keys:
+            outcomes[normalize_url(item.url)] = "duplicate"
             continue
+        outcomes[normalize_url(item.url)] = "company"
         seen_keys.add(key)
         if name_key:
             seen_keys.add(name_key)
