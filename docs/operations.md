@@ -64,7 +64,7 @@ For an overview, see the [README](../README.md).
 | Secret | `ANTHROPIC_API_KEY` |
 | Secret | `TYPESAFE_API_KEY` |
 | Secret | `DATABASE_URL` (Supabase **Session pooler** URL; the direct host is IPv6-only and unreachable from GitHub) |
-| Variable | `EDGAR_USER_AGENT` (real SEC contact) |
+| Variable | `EDGAR_USER_AGENT` (optional: app name + contact email for the SEC; a generic one is used if unset) |
 | Variable | `JUDGE_BACKEND` (optional; defaults to `jev`, set `llm` only to judge with Claude on purpose) |
 
 - The job installs hash-pinned dependencies, runs unit tests, then

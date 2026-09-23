@@ -46,6 +46,15 @@ class BackendSelectionTests(unittest.TestCase):
         importlib.reload(config)
 
 
+class EmptyEnvTests(unittest.TestCase):
+    def test_empty_edgar_user_agent_falls_back(self):
+        # The same GitHub empty-variable trap blanked the SEC user agent (403).
+        import importlib
+        with patch.dict(os.environ, {"EDGAR_USER_AGENT": "", "PYTHON_DOTENV_DISABLED": "1"}):
+            self.assertTrue(importlib.reload(config).EDGAR_USER_AGENT)
+        importlib.reload(config)
+
+
 class PreflightTests(unittest.IsolatedAsyncioTestCase):
     async def test_judge_failure_stops_the_run_before_extraction(self):
         with patch.object(main.db, "migrate"), patch.object(main.db, "exclude_aged_out"), \

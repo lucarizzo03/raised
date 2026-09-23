@@ -58,10 +58,10 @@ GOOGLE_NEWS_RSS = (
 
 EDGAR_FULL_TEXT_SEARCH = "https://efts.sec.gov/LATEST/search-index"
 EDGAR_FORMS = "D"
-# SEC requires a declared user agent with contact info.
-EDGAR_USER_AGENT = os.environ.get(
-    "EDGAR_USER_AGENT", "raised-pipeline/0.1 (contact@example.com)"
-)
+# SEC requires a declared user agent with contact info. GitHub passes an unset
+# repository variable as "", and SEC refuses a blank user agent (403), so an
+# empty value falls back to the default too.
+EDGAR_USER_AGENT = os.environ.get("EDGAR_USER_AGENT") or "raised-pipeline/0.1 (contact@example.com)"
 
 # --- Fetching -------------------------------------------------------------------
 HTTP_TIMEOUT = 20.0

@@ -34,7 +34,7 @@ flowchart LR
 1. **Check** — confirm the Claude and Jev accounts work before touching anything.
 2. **Discover** — pull the last 3 days of TechCrunch RSS, Google News and SEC Form D filings, skipping articles already processed on an earlier day.
 3. **Extract** — Claude Sonnet 4.5 pulls the company, round, amount and date out of each article.
-4. **Verify** — confirm the company's domain, drop duplicates and reject stale or unverifiable rounds.
+4. **Verify & screen** — confirm the company's domain, drop duplicates, reject stale or unverifiable rounds, and have Jev confirm the article announces a *new* round.
 5. **Enrich & judge** — check job boards (Ashby, Greenhouse, Lever) and about pages; Jev makes the calls listed [below](#what-jev-decides).
 6. **Score & store** — Python adds up points and saves everything to Postgres.
 
@@ -43,7 +43,7 @@ flowchart LR
 | Step | Handled by |
 |---|---|
 | Funding extraction | Claude Sonnet 4.5 (`claude-sonnet-4-5`) |
-| Every judgment call ([list](#what-jev-decides)) | TypeSafe Jev, always (the run stops if Jev is unavailable) |
+| Every judgment call ([list](#what-jev-decides)) | TypeSafe Jev. The run stops if Jev is unavailable; it never switches to Claude on its own |
 | Scoring and explanations | Plain Python — no model |
 | Email drafts | Fixed TypeScript template — no model |
 
@@ -66,18 +66,48 @@ and is never flagged.
 | 2 | Company | Is this really a company raising money (not a bar, event or product launch)? | yes / no | A confident "no" rejects it (`not_startup_raise`) |
 | 3 | Company | Is it a venture-backed tech startup? | yes / no | A confident "no" rejects it (`not_startup_raise`) |
 | 4 | Company | Who does it sell to? | B2B / B2C / Both / Unclear | Confident B2C is hidden; B2B shows in the explanation |
-| 5 | Company | Which round is it? | Pre-seed … Later | Replaces Claude's label; Seed–Series B earns +15, "Later" over $200M is hidden |
-| 6 | Company | How well does it fit the ideal customer? | 0–4 | 0–20 points |
-| 7 | Each sales-looking job | Is this a sales role? | yes / no | Any "yes" earns +15; the titles show on the dashboard |
-| 8 | Each sales-looking job | What kind? | AE / SDR / Head of Sales / Other | Shown on the dashboard only |
-| 9 | About page | Are the founders technical? | yes / no / unknown | +10 for yes; "unknown" (page doesn't name the founders) scores nothing and shows "Founders: unknown" |
-| 10 | About page | Is this their first sales hire? | yes / no / unknown | +30 for yes, only if #7 also found an open sales role. "Unknown" (nothing known about the sales team) is only allowed when no sales roles are open, and scores nothing |
-| 11 | Investigation | Enough evidence, or dig further? | score now / check careers / search news / fetch about page | Gathers that evidence and re-asks #2–#6; at most 3 rounds |
+| 5 | Company | Which round is it? | Pre-seed / Seed / Series A / Series B / Later | Replaces Claude's label; Seed–Series B earns +15, "Later" with over $200M raised is hidden |
+| 6 | Company | How well does it fit the [ideal customer](#ideal-customer-icp)? | 0–4 (can be in between, e.g. 2.7) | 0–20 points |
+| 7 | Each sales-looking job | Is this a direct, quota-carrying sales role? | yes / no | Any "yes" earns +15; the titles show on the dashboard |
+| 8 | Each sales-looking job | What kind? | AE / SDR / Head of Sales / Other | "Other" overrides #7: the job doesn't count as sales |
+| 9 | About page | Are the founders technical? | yes / no / unknown | +10 for yes (scaled down below 0.7 confidence). "Unknown" (the page doesn't name the founders) scores nothing and shows "Founders: unknown" |
+| 10 | About page | Is this their first sales hire? | yes / no / unknown | +30 for yes, only if #7 found an open sales role (scaled down below 0.7 confidence). Jev sees the open role titles; "unknown" is only offered when none are open, and scores nothing |
+| 11 | Investigation | Enough evidence, or dig further? | score now / check careers / search news / fetch about page (only options not yet tried) | Gathers that evidence and re-asks #2–#6; at most 3 rounds |
+
+**How the answers are used:**
+- **Rejections** (#1–#3) need a "no" with at least 0.7 confidence. #2–#3 are
+  checked once, before investigation, and are skipped if they would reject more
+  than half of a batch of 4 or more (that points to a model problem, not bad
+  companies).
+- **Re-asked questions** (#2–#6 during investigation): the latest answer is the
+  one that counts.
+- **Scaled points** (#9, #10): full points at 0.7 confidence or more; below
+  that, `points × confidence ÷ 0.7`, rounded. The score breakdown shows it, e.g.
+  "First sales hire (confidence 0.36) +15 (reduced from 30)".
+- **Which jobs Jev sees** (#7–#8): only titles or departments that look like
+  sales, at most 20 per company. Partnerships, customer success, account
+  management, marketing, general management, consulting and solutions
+  engineering count as "Other".
 
 **Jev doesn't decide:** what an article says (Claude), whether a domain is
-real, dates and freshness, duplicates, or the point values and cut-offs (all
-plain Python). The #2–#3 rejections are skipped if they would hit most of a
-day's batch, which points to a model problem rather than bad companies.
+real, dates and freshness, duplicates, which jobs look like sales, or the point
+values and cut-offs (all plain Python).
+
+### Ideal customer (ICP)
+
+Jev places each company on this rubric: *"a B2B company at Seed to Series B
+that is building a sales function for the first time."*
+
+| Step | Meaning |
+|---:|---|
+| 0 | Consumer, not B2B, or wrong stage |
+| 1 | Weak fit |
+| 2 | B2B, but stage or sales motion unclear |
+| 3 | B2B, right stage, some go-to-market signal |
+| 4 | B2B at Seed–Series B, clearly building sales for the first time |
+
+Points are `20 × step ÷ 4`, rounded (step 2.7 → 14 points). To change who
+counts as ideal, edit the question in `pipeline/src/judge.py`.
 
 ---
 
@@ -89,15 +119,18 @@ Points are additive (max **120**) — not a percentage.
 |---|---:|
 | Raise recency (fades to 0 over 90 days) | 0–30 |
 | Seed, Series A or Series B | +15 |
-| Open sales role | +15 |
-| …and it's their first sales hire | +30 more |
-| Technical founder | +10 |
+| Open direct sales role (AE, SDR/BDR, sales leadership) | +15 |
+| …and it's their first sales hire | +30 more* |
+| Technical founders | +10* |
 | ICP fit | 0–20 |
 
-Automatically hidden: confident B2C companies, late-stage companies with more
-than $200M raised, records that clearly aren't a startup raising money, and
-anything whose raise is older than 90 days. Hidden companies are kept in the
-database, never deleted.
+\* Full points at 0.7 confidence or more, scaled down below that
+([details](#what-jev-decides)).
+
+Automatically hidden: confident B2C companies, "Later"-round companies with more
+than $200M raised, articles that don't announce a new round, records that
+clearly aren't a startup raising money, and anything whose raise is older than
+90 days. Hidden companies are kept in the database, never deleted.
 
 Weights live in [`pipeline/src/config.py`](pipeline/src/config.py).
 
@@ -109,7 +142,8 @@ Weights live in [`pipeline/src/config.py`](pipeline/src/config.py).
   `SUPABASE_ANON_KEY` set.
 - **Pipeline** → [GitHub Actions](.github/workflows/daily.yml), daily at
   **13:00 UTC**. Needs secrets `ANTHROPIC_API_KEY`, `TYPESAFE_API_KEY` and
-  `DATABASE_URL`, and the variable `EDGAR_USER_AGENT`.
+  `DATABASE_URL`. The variable `EDGAR_USER_AGENT` (an app name and contact
+  email, which the SEC asks for) is optional; a generic one is used without it.
   - `DATABASE_URL` must be Supabase's **Session pooler** URL: GitHub runners
     can't reach the direct database host, which is IPv6-only.
   - If Claude or Jev runs out of funds, the run stops before saving anything and
