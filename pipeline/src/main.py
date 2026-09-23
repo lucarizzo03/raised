@@ -16,11 +16,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 from datetime import date
 
 from . import config, dates, db
 from .models import Company
-from .resilience import run_each
+from .resilience import OutOfFunds, run_each
 
 log = logging.getLogger(__name__)
 
@@ -164,6 +165,17 @@ async def main(argv: list[str] | None = None) -> None:
     if not args.verbose:
         for name in ("httpx", "httpx2"):
             logging.getLogger(name).setLevel(logging.WARNING)
+
+    # Check both paid providers before anything touches the database: an empty
+    # balance or a bad key stops here with nothing written.
+    if not args.mock_models:
+        from . import judge, llm
+
+        if args.command in {"discover", "jobs", "judge", "score", "run", "cleanup"}:
+            await llm.preflight()
+        if args.command in {"jobs", "judge", "score", "run", "cleanup"}:
+            await judge.preflight()
+
     today = dates.now_utc().date()
     if args.command in {"run", "cleanup", "migrate"}:
         db.migrate()
@@ -171,10 +183,7 @@ async def main(argv: list[str] | None = None) -> None:
         print("date-window migration applied")
         return
     if args.command == "cleanup":
-        from . import judge
         from .cleanup import audit_existing
-
-        await judge.preflight()
 
         companies = await audit_existing()
         result = db.persist_run(companies, today, write_scores=False)
@@ -194,8 +203,6 @@ async def main(argv: list[str] | None = None) -> None:
 
     from . import investigate, jobs as jobs_mod, judge, score
 
-    if not args.mock_models and args.command != "discover":
-        await judge.preflight()  # fail on the judge before paying for extraction
     window_days = config.BACKFILL_WINDOW_DAYS if args.backfill else config.INGEST_WINDOW_DAYS
     log.info("pipeline mode=%s window_days=%d", "backfill" if args.backfill else "daily", window_days)
     outcomes: dict[str, str] = {}
@@ -260,5 +267,23 @@ async def main(argv: list[str] | None = None) -> None:
         print(f"Dashboard: {db.dashboard_summary()}")
 
 
+def cli(argv: list[str] | None = None) -> None:
+    """Entry point. Running out of funds is an expected, clean stop: one clear
+    message, nothing saved, non-zero exit so the scheduled job reports it."""
+    try:
+        asyncio.run(main(argv))
+    except OutOfFunds as exc:
+        message = (
+            f"{exc}. The run stopped before saving anything, so existing data is "
+            "unchanged. Add funds and the next run picks up from here."
+        )
+        log.error(message)
+        summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary:
+            with open(summary, "a") as f:
+                f.write(f"### Out of funds\n\n{message}\n")
+        raise SystemExit(3) from None
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    cli()

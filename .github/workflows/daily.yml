@@ -46,28 +46,3 @@ jobs:
           # Jev judges; set the repo variable to "llm" only to use Claude on purpose.
           JUDGE_BACKEND: ${{ vars.JUDGE_BACKEND || 'jev' }}
         run: python -m src.main run -v
-
-  # Scheduled failures are easy to miss, so each one opens (or comments on)
-  # a single tracking issue.
-  report-failure:
-    needs: run
-    if: failure()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      issues: write
-    steps:
-      - name: Open or update the failure issue
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          title="Daily pipeline failing"
-          body="The daily pipeline failed on $(date -u +%Y-%m-%d): $RUN_URL"
-          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
-          if [ -n "$number" ]; then
-            gh issue comment "$number" --body "$body"
-          else
-            gh issue create --title "$title" --body "$body"
-          fi

@@ -50,6 +50,7 @@ class PreflightTests(unittest.IsolatedAsyncioTestCase):
     async def test_judge_failure_stops_the_run_before_extraction(self):
         with patch.object(main.db, "migrate"), patch.object(main.db, "exclude_aged_out"), \
              patch("src.judge.preflight", AsyncMock(side_effect=judge.JudgeBackendError("no key"))), \
+             patch("src.llm.preflight", AsyncMock()), \
              patch.object(main, "_discover", AsyncMock()) as discover:
             with self.assertRaises(judge.JudgeBackendError):
                 await main.main(["run"])

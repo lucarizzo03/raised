@@ -108,7 +108,7 @@ class ProcessedArticleTests(unittest.IsolatedAsyncioTestCase):
              patch.object(main.db, "persist_run", return_value={}) as persist, \
              patch("src.judge.judge_new_round", AsyncMock()), patch("src.jobs.fetch_all_jobs", AsyncMock()), \
              patch("src.judge.judge_all", side_effect=judge_all), patch("src.investigate.investigate_all", AsyncMock()), \
-             patch("src.judge.preflight", AsyncMock()), \
+             patch("src.judge.preflight", AsyncMock()), patch("src.llm.preflight", AsyncMock()), \
              patch("builtins.print"):
             await main.main(["run"])
         self.assertEqual(persist.call_args.kwargs["processed_articles"],

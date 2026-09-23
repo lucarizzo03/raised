@@ -148,12 +148,19 @@ def backend():
 
 
 async def preflight() -> None:
-    """One tiny judgment before any paid work, so a bad key or an unreachable
-    judge stops the run before extraction spends anything."""
-    answers = await backend().ask(
-        "company: Preflight Inc\nclaimed round: seed",
-        _questions(ok=("noul", {"instructions": "Is this a company record?"})),
-    )
+    """One tiny judgment before any paid work, so a bad key, an empty balance or
+    an unreachable judge stops the run before extraction spends anything."""
+    from .resilience import OutOfFunds, is_out_of_funds, provider_name
+
+    try:
+        answers = await backend().ask(
+            "company: Preflight Inc\nclaimed round: seed",
+            _questions(ok=("noul", {"instructions": "Is this a company record?"})),
+        )
+    except Exception as exc:
+        if is_out_of_funds(exc):
+            raise OutOfFunds(f"{provider_name(exc)} account is out of funds") from exc
+        raise
     if "ok" not in answers:
         raise JudgeBackendError(f"{type(backend()).__name__} preflight returned no answer")
     log.info("judge preflight ok: %s", type(backend()).__name__)

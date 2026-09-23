@@ -32,6 +32,23 @@ def _make_client():
 _client = _per_loop(_make_client)
 
 
+async def preflight() -> None:
+    """A one-token call, so an empty balance or a bad key stops the run before
+    it touches the database or spends anything real."""
+    from .resilience import OutOfFunds, is_out_of_funds, provider_name
+
+    try:
+        await _client().messages.create(
+            model=config.ANTHROPIC_MODEL, max_tokens=1,
+            messages=[{"role": "user", "content": "ok"}],
+        )
+    except Exception as exc:
+        if is_out_of_funds(exc):
+            raise OutOfFunds(f"{provider_name(exc)} account is out of funds") from exc
+        raise
+    log.info("claude preflight ok: %s", config.ANTHROPIC_MODEL)
+
+
 async def complete_json(system: str, user: str, max_tokens: int = 1500, *, schema: dict | None = None) -> dict[str, Any]:
     """One call that must return a JSON object."""
     client = _client()

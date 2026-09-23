@@ -32,6 +32,7 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
                 stack.enter_context(patch("src.jobs.fetch_all_jobs", new_callable=AsyncMock))
                 stack.enter_context(patch("src.judge.judge_all", new_callable=AsyncMock))
                 stack.enter_context(patch("src.judge.preflight", new_callable=AsyncMock))
+                stack.enter_context(patch("src.llm.preflight", new_callable=AsyncMock))
                 stack.enter_context(patch("src.investigate.investigate_all", new_callable=AsyncMock))
                 stack.enter_context(patch("builtins.print"))
                 await main.main(argv)
@@ -58,6 +59,7 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
             stack.enter_context(patch("src.jobs.fetch_all_jobs", new_callable=AsyncMock))
             stack.enter_context(patch("src.judge.judge_all", side_effect=judge_all))
             stack.enter_context(patch("src.judge.preflight", new_callable=AsyncMock))
+            stack.enter_context(patch("src.llm.preflight", new_callable=AsyncMock))
             investigate = stack.enter_context(patch("src.investigate.investigate_all", new_callable=AsyncMock))
             stack.enter_context(patch("builtins.print"))
             await main.main(["run"])
@@ -67,7 +69,8 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bar.score, 0)
 
     async def test_completed_backfill_stops_before_discovery(self):
-        with patch.object(main.db, "migrate"), patch.object(main.db, "backfill_completed", return_value=True), patch.object(main, "_discover", new_callable=AsyncMock) as discover:
+        with patch.object(main.db, "migrate"), patch.object(main.db, "backfill_completed", return_value=True), patch.object(main, "_discover", new_callable=AsyncMock) as discover, \
+             patch("src.llm.preflight", new_callable=AsyncMock), patch("src.judge.preflight", new_callable=AsyncMock):
             with self.assertRaises(SystemExit):
                 await main.main(["run", "--backfill"])
         discover.assert_not_awaited()

@@ -66,8 +66,15 @@ For an overview, see the [README](../README.md).
 - The job installs hash-pinned dependencies, runs unit tests, then
   `python -m src.main run -v`. It never backfills.
 - It times out after 60 minutes and never overlaps with another run.
-- **A failed run opens a "Daily pipeline failing" issue** (or comments on the
-  open one). Close it once the run is healthy again.
+- **Out of funds (Claude or Jev) is a clean stop.** Both are checked with a
+  one-token call before the run touches the database, and a billing refusal at
+  any later point stops the whole run too. Nothing is saved, existing data and
+  the dashboard stay as they are, and the run log (and the run's summary page)
+  says which account to top up. After funds are added the next run carries on;
+  articles from the missed days are picked up while they're still inside the
+  3-day lookback.
+- **Failures don't open issues.** A failed run just shows as failed on the
+  Actions tab, with the reason in its log and summary.
 - **Failure handling:** model calls retry rate limits, overloads and timeouts
   with backoff. A company that still fails is skipped for that run and picked
   up again the next day. If more than 25% of a stage fails, the provider is
