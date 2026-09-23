@@ -110,6 +110,10 @@ ICP_FIT_SCALE_MAX = 4.0
 B2C_EXCLUDE_CONFIDENCE = 0.7
 LATE_STAGE_AMOUNT_CEILING = 200_000_000
 
+# First sales hire (+30) and technical founders (+10) pay out in full at this
+# confidence; below it, points scale down: round(points * confidence / 0.7).
+FULL_POINTS_CONFIDENCE = 0.7
+
 SCORING_ROUNDS = {"seed", "series_a", "series_b"}  # rounds worth SCORING_WEIGHTS["round_seed_to_b"]
 EARLY_ROUNDS = {"pre_seed", "seed", "series_a", "series_b"}
 

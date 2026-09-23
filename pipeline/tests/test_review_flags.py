@@ -134,5 +134,70 @@ class LatestAnswerTests(unittest.TestCase):
         self.assertIn("any_sales_role_open", c.rules_fired)
 
 
+class ScaledPointsTests(unittest.TestCase):
+    def scored(self, founders_conf, hire_conf):
+        from src.models import Signal
+        c = company(signals=[
+            Signal(signal_type="sales_role", value="yes (AE)", confidence=0.9),
+            Signal(signal_type="technical_founders", value="yes", confidence=founders_conf),
+            Signal(signal_type="first_sales_hire", value="yes", confidence=hire_conf),
+        ])
+        with patch.object(score, "now_utc", return_value=SimpleNamespace(date=lambda: date(2026, 9, 22))):
+            score.score_company(c)
+        return c
+
+    def test_full_points_at_or_above_0_7(self):
+        c = self.scored(0.7, 0.98)
+        self.assertIn("first_sales_hire", c.rules_fired)
+        self.assertIn("technical_founders", c.rules_fired)
+
+    def test_points_scale_below_0_7_and_say_so(self):
+        c = self.scored(0.35, 0.14)
+        self.assertIn("first_sales_hire (+6, confidence 0.14, reduced from 30)", c.rules_fired)   # round(30*0.14/0.7)
+        self.assertIn("technical_founders (+5, confidence 0.35, reduced from 10)", c.rules_fired)  # round(10*0.35/0.7)
+        full = self.scored(0.9, 0.9)
+        self.assertEqual(full.score - c.score, (30 - 6) + (10 - 5))
+
+    def test_weights_are_unchanged(self):
+        self.assertEqual(config.SCORING_WEIGHTS, {"round_seed_to_b": 15, "first_sales_hire": 30,
+                                                  "any_sales_role_open": 15, "technical_founders": 10})
+
+    def test_explanation_still_mentions_the_rule(self):
+        self.assertIn("making first sales hire", self.scored(0.35, 0.14).explanation)
+
+
+class SalesRoleTests(unittest.IsolatedAsyncioTestCase):
+    async def classify(self, is_sales, sales_type):
+        from src.models import JobPosting
+        c = company()
+        answers = {"is_sales": Judgment(is_sales, 0.8), "sales_type": Judgment(sales_type, 0.9)}
+        asked = {}
+
+        async def ask(state, qs):
+            asked.update(qs)
+            return dict(answers)
+
+        with patch.object(judge, "backend", return_value=SimpleNamespace(ask=ask)), \
+             patch.object(judge, "_questions", side_effect=lambda **q: q):
+            await judge.judge_job(c, JobPosting(title="Technical AI Account Manager", url="u", board="ashby"))
+        return c.signals[0], asked
+
+    async def test_other_is_never_counted_as_sales(self):
+        sig, _ = await self.classify("yes", "Other")
+        self.assertEqual((sig.value, sig.confidence), ("no (Technical AI Account Manager)", 0.9))
+
+    async def test_real_sales_roles_still_count(self):
+        for kind in ("AE", "SDR", "Head of Sales"):
+            sig, _ = await self.classify("yes", kind)
+            self.assertTrue(sig.value.startswith("yes"), kind)
+
+    async def test_question_names_the_excluded_role_families(self):
+        _, asked = await self.classify("no", "Other")
+        text = asked["is_sales"][1]["instructions"] + asked["sales_type"][1]["criteria"]["Other"]
+        for family in ("partnerships", "customer success", "account management", "marketing",
+                       "country management", "consulting", "solutions or sales engineering"):
+            self.assertIn(family, text)
+
+
 if __name__ == "__main__":
     unittest.main()

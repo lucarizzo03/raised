@@ -411,7 +411,10 @@ function ExpandedRow({ company }: { company: Company }) {
           {company.rulesFired.map((r) => (
             <li key={r.rule} className="flex justify-between py-1">
               <span className="text-text">{r.rule}</span>
-              <span className="tabular-nums text-text">+{r.points}</span>
+              <span className="tabular-nums text-text">
+                +{r.points}
+                {r.note && <span className="text-text-secondary"> ({r.note})</span>}
+              </span>
             </li>
           ))}
         </ul>

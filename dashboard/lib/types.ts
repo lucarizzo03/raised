@@ -74,7 +74,8 @@ export type Company = {
   amountRaised: number | null;
   raisedDate: string | null;
   score: number;
-  rulesFired: { rule: string; points: number }[];
+  /** note: e.g. "reduced from 30" when a low-confidence answer earned partial points */
+  rulesFired: { rule: string; points: number; note?: string }[];
   explanation: string;
   signals: Signal[];
   badges: Badge[];

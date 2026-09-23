@@ -28,6 +28,18 @@ def _latest_yes(company: Company, signal_type: str) -> bool:
     return bool(sig and sig.value.startswith("yes"))
 
 
+def _scaled(company: Company, rule: str) -> tuple[int, str]:
+    """Points for a confidence-scaled rule and its rules_fired entry. Full
+    points keep the plain rule name; a reduction is spelled out, e.g.
+    "first_sales_hire (+6, confidence 0.14, reduced from 30)"."""
+    full = _WEIGHTS[rule]
+    confidence = _latest(company, rule).confidence
+    if confidence >= config.FULL_POINTS_CONFIDENCE:
+        return full, rule
+    points = round(full * confidence / config.FULL_POINTS_CONFIDENCE)
+    return points, f"{rule} (+{points}, confidence {confidence:.2f}, reduced from {full})"
+
+
 def _has_sales_role(company: Company) -> bool:
     return _signal_yes(company, "sales_role")
 
@@ -106,16 +118,18 @@ def score_company(company: Company) -> None:
         rules.append("round_seed_to_b")
 
     if _latest_yes(company, "first_sales_hire") and _has_sales_role(company):
-        score += _WEIGHTS["first_sales_hire"]
-        rules.append("first_sales_hire")
+        points, rule = _scaled(company, "first_sales_hire")
+        score += points
+        rules.append(rule)
 
     if _has_sales_role(company):
         score += _WEIGHTS["any_sales_role_open"]
         rules.append("any_sales_role_open")
 
     if _latest_yes(company, "technical_founders"):
-        score += _WEIGHTS["technical_founders"]
-        rules.append("technical_founders")
+        points, rule = _scaled(company, "technical_founders")
+        score += points
+        rules.append(rule)
 
     icp, _raw = icp_points(company)
     if icp > 0:

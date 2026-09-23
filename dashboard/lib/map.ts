@@ -35,12 +35,20 @@ const RULE_LABELS: Record<string, string> = {
   icp_fit: "ICP fit",
 };
 
-/** "raise_recency (+28)" -> { rule: "Raise recency", points: 28 } */
-function parseRule(raw: string): { rule: string; points: number } {
-  const match = raw.match(/^(\w+)\s*\(\+(\d+)\)$/);
+/**
+ * "raise_recency (+28)" -> { rule: "Raise recency", points: 28 }
+ * "first_sales_hire (+6, confidence 0.14, reduced from 30)"
+ *   -> { rule: "First sales hire (confidence 0.14)", points: 6, note: "reduced from 30" }
+ */
+function parseRule(raw: string): { rule: string; points: number; note?: string } {
+  const match = raw.match(/^(\w+)\s*\(\+(\d+)(?:,\s*confidence ([\d.]+),\s*(reduced from \d+))?\)$/);
   const key = match ? match[1] : raw;
   const points = match ? Number(match[2]) : (RULE_POINTS[key] ?? 0);
-  return { rule: RULE_LABELS[key] ?? key, points };
+  const label = RULE_LABELS[key] ?? key;
+  if (match?.[3]) {
+    return { rule: `${label} (confidence ${match[3]})`, points, note: match[4] };
+  }
+  return { rule: label, points };
 }
 
 /** "yes (Account Executive)" -> "Account Executive" */

@@ -142,20 +142,28 @@ async def _screen(companies: list[Company], mock: bool = False) -> list[Company]
 
 
 async def _rescore(today: date, dry_run: bool) -> None:
-    """Re-ask the founder questions for every scored company and recompute its
-    score, so stored scores follow the current judging rules. Uses the stored
-    sales-role answers; fetches each about page again."""
+    """Re-judge every scored company's jobs and founders under the current
+    rules and recompute its score. Job boards and about pages are fetched
+    again; a board that returns nothing keeps its stored job answers."""
     from . import investigate, judge, score
+    from . import jobs as jobs_mod
     from .fetch import Fetcher
 
     companies = db.load_scored_companies()
     for c in companies:  # the old answers are replaced, not kept alongside
         c.signals = [s for s in c.signals if s.signal_type not in db.FOUNDER_SIGNALS]
     fetcher = Fetcher()
+    rejudged_jobs: set[int] = set()
 
     async def rejudge(c: Company) -> None:
+        found = await jobs_mod.fetch_jobs(c, fetcher)
+        if found:
+            c.jobs = found
+            c.signals = [s for s in c.signals if s.signal_type not in db.JOB_SIGNALS]
+            await asyncio.gather(*(judge.judge_job(c, j) for j in jobs_mod.sales_candidates(found)))
+            rejudged_jobs.add(c.id)
         await investigate._fetch_about(c, fetcher)
-        await judge.judge_founders(c)
+        await judge.judge_founders(c)  # after jobs: it sees the current open sales roles
 
     try:
         _, failed = await run_each(companies, rejudge, stage="rescore", label=lambda c: c.name)
@@ -165,11 +173,12 @@ async def _rescore(today: date, dry_run: bool) -> None:
     done = [c for c in companies if id(c) not in failed_ids]
     for c in done:
         score.score_company(c)
-    print(f"rescored {len(done)} companies ({len(failed)} failed and keep their old score)")
+    print(f"rescored {len(done)} companies ({len(failed)} failed and keep their old score); "
+          f"jobs re-judged for {len(rejudged_jobs)}, stored job answers kept for {len(done) - len(rejudged_jobs)}")
     if dry_run:
         print("dry run: nothing written")
         return
-    print(f"Rescore: {db.save_rescore(done, today)}")
+    print(f"Rescore: {db.save_rescore(done, today, rejudged_jobs)}")
 
 
 def _without_failed(companies: list[Company]) -> list[Company]:

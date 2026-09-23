@@ -307,25 +307,39 @@ async def judge_job(company: Company, job: JobPosting) -> None:
         f"department: {job.department or 'unknown'}\n"
         f"description excerpt: {job.description_text[:800]}"
     )
+    # Only direct, quota-carrying sales counts. Words like "account",
+    # "business", "revenue" or "GTM" in a title are not enough.
+    not_sales = (
+        "partnerships, customer success, account management, marketing, general or "
+        "country management, consulting, and solutions or sales engineering"
+    )
     questions = _questions(
         is_sales=(
             "noul",
-            {"instructions": "Is this a sales role (account executive, SDR/BDR, sales leadership, revenue)?"},
+            {"instructions": (
+                "Is this a direct, quota-carrying sales role: an account executive who "
+                "closes new business, an SDR/BDR who prospects, or sales leadership "
+                f"(Head/VP of Sales, CRO)? Answer no for {not_sales}, even when the "
+                "title mentions accounts, business, revenue or GTM."
+            )},
         ),
         sales_type=(
             "choice",
             {
-                "instructions": "Which type of sales role is this?",
+                "instructions": "Which type of role is this?",
                 "criteria": {
-                    "AE": "Account executive / closing role",
-                    "SDR": "SDR, BDR, outbound prospecting",
-                    "Head of Sales": "VP Sales, Head of Sales, CRO, sales leadership",
-                    "Other": "Other sales-adjacent role or not a sales role",
+                    "AE": "Account executive: closes new business and carries a quota",
+                    "SDR": "SDR or BDR: prospects and books meetings for account executives",
+                    "Head of Sales": "Head, VP or Director of Sales, or CRO: leads the sales team",
+                    "Other": f"Anything else, including {not_sales}",
                 },
             },
         ),
     )
     answers = await backend().ask(state, questions)
+    if answers["is_sales"].value == "yes" and answers["sales_type"].value == "Other":
+        # Jev typed it as not direct sales: that decides it, with that answer's confidence.
+        answers["is_sales"] = Judgment("no", answers["sales_type"].confidence)
     _record(
         company, "sales_role", answers["is_sales"], job.url,
         extra_value=f"{job.title}",

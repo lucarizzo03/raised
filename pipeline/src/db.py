@@ -77,6 +77,7 @@ def load_existing() -> list[Company]:
 
 
 FOUNDER_SIGNALS = ("technical_founders", "first_sales_hire")
+JOB_SIGNALS = ("sales_role", "sales_role_type")
 
 
 def load_scored_companies() -> list[Company]:
@@ -101,18 +102,20 @@ def load_scored_companies() -> list[Company]:
     return out
 
 
-def save_rescore(companies: list[Company], run_date: date) -> dict:
-    """One transaction: replace each company's founder answers with the new
-    ones, re-flag stored answers under the per-question review bars, and write
-    fresh scores. An interrupted rescore changes nothing."""
+def save_rescore(companies: list[Company], run_date: date, rejudged_jobs: set[int] = frozenset()) -> dict:
+    """One transaction: replace each company's founder answers (and, for the
+    companies in `rejudged_jobs`, its job answers) with the new ones, re-flag
+    stored answers under the per-question review bars, and write fresh scores.
+    An interrupted rescore changes nothing."""
     with get_conn() as conn, conn.transaction():
         for c in companies:
+            replaced = FOUNDER_SIGNALS + (JOB_SIGNALS if c.id in rejudged_jobs else ())
             conn.execute(
                 "delete from signals where company_id = %s and signal_type = any(%s)",
-                (c.id, list(FOUNDER_SIGNALS)),
+                (c.id, list(replaced)),
             )
             for s in c.signals:
-                if s.signal_type in FOUNDER_SIGNALS:
+                if s.signal_type in replaced:
                     conn.execute(
                         "insert into signals (company_id, signal_type, value, confidence, needs_review, source_url, detected_at) "
                         "values (%s, %s, %s, %s, %s, %s, %s)",

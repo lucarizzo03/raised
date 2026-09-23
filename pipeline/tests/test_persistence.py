@@ -85,6 +85,22 @@ class PersistenceTests(unittest.TestCase):
         self.assertFalse(flags["sells_to"])  # 0.6 clears the 0.5 sells-to bar
         self.assertEqual(self.conn.execute("select score from ranked_companies where company_id=%s", (c.id,)).fetchone()[0], 42)
 
+    def test_rescore_replaces_job_answers_only_when_rejudged(self):
+        from src.models import Signal
+        a, b = self.company("A"), self.company("B")
+        for c in (a, b):
+            c.signals = [Signal(signal_type="sales_role", value="yes (Head of Germany)", confidence=0.8, source_url="j1")]
+        db.persist_run([a, b], self.today - timedelta(days=1))
+        loaded = {x.id: x for x in db.load_scored_companies() if x.id in (a.id, b.id)}
+        for c in loaded.values():
+            c.signals = [Signal(signal_type="sales_role", value="no (Head of Germany)", confidence=0.9, source_url="j1")]
+            c.score, c.explanation, c.rules_fired = 1, "", []
+        db.save_rescore(list(loaded.values()), self.today, rejudged_jobs={a.id})
+        values = {cid: [r[0] for r in self.conn.execute("select value from signals where company_id=%s and signal_type='sales_role'", (cid,))]
+                  for cid in (a.id, b.id)}
+        self.assertEqual(values[a.id], ["no (Head of Germany)"])   # re-judged: replaced
+        self.assertEqual(values[b.id], ["yes (Head of Germany)"])  # board returned nothing: kept
+
     def test_rejected_companies_has_row_level_security(self):
         enabled = self.conn.execute("select relrowsecurity from pg_class where oid = 'rejected_companies'::regclass").fetchone()[0]
         self.assertTrue(enabled)
