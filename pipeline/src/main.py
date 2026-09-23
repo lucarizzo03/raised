@@ -141,6 +141,37 @@ async def _screen(companies: list[Company], mock: bool = False) -> list[Company]
     return [c for c in companies if not c.rejection_reason and not c.failed_stage]
 
 
+async def _rescore(today: date, dry_run: bool) -> None:
+    """Re-ask the founder questions for every scored company and recompute its
+    score, so stored scores follow the current judging rules. Uses the stored
+    sales-role answers; fetches each about page again."""
+    from . import investigate, judge, score
+    from .fetch import Fetcher
+
+    companies = db.load_scored_companies()
+    for c in companies:  # the old answers are replaced, not kept alongside
+        c.signals = [s for s in c.signals if s.signal_type not in db.FOUNDER_SIGNALS]
+    fetcher = Fetcher()
+
+    async def rejudge(c: Company) -> None:
+        await investigate._fetch_about(c, fetcher)
+        await judge.judge_founders(c)
+
+    try:
+        _, failed = await run_each(companies, rejudge, stage="rescore", label=lambda c: c.name)
+    finally:
+        await fetcher.close()
+    failed_ids = {id(c) for c in failed}
+    done = [c for c in companies if id(c) not in failed_ids]
+    for c in done:
+        score.score_company(c)
+    print(f"rescored {len(done)} companies ({len(failed)} failed and keep their old score)")
+    if dry_run:
+        print("dry run: nothing written")
+        return
+    print(f"Rescore: {db.save_rescore(done, today)}")
+
+
 def _without_failed(companies: list[Company]) -> list[Company]:
     """Failed companies are not persisted; the next run rediscovers them."""
     return [c for c in companies if not c.failed_stage]
@@ -148,14 +179,17 @@ def _without_failed(companies: list[Company]) -> list[Company]:
 
 async def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", nargs="?", default="run", choices=["discover", "jobs", "judge", "score", "run", "ranked", "migrate", "cleanup"])
+    parser.add_argument("command", nargs="?", default="run", choices=["discover", "jobs", "judge", "score", "run", "ranked", "migrate", "cleanup", "rescore"])
     parser.add_argument("--backfill", action="store_true")
     parser.add_argument("--mock-models", action="store_true")
+    parser.add_argument("--dry-run", action="store_true", help="rescore: compute and print, write nothing")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     if args.backfill and args.command != "run":
         parser.error("--backfill is only supported for run")
-    if args.mock_models and args.command in {"run", "cleanup"}:
+    if args.dry_run and args.command != "rescore":
+        parser.error("--dry-run is only supported for rescore")
+    if args.mock_models and args.command in {"run", "cleanup", "rescore"}:
         parser.error("--mock-models cannot write to the database; use score to preview")
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -173,12 +207,15 @@ async def main(argv: list[str] | None = None) -> None:
 
         if args.command in {"discover", "jobs", "judge", "score", "run", "cleanup"}:
             await llm.preflight()
-        if args.command in {"jobs", "judge", "score", "run", "cleanup"}:
+        if args.command in {"jobs", "judge", "score", "run", "cleanup", "rescore"}:
             await judge.preflight()
 
     today = dates.now_utc().date()
-    if args.command in {"run", "cleanup", "migrate"}:
+    if args.command in {"run", "cleanup", "migrate"} or (args.command == "rescore" and not args.dry_run):
         db.migrate()
+    if args.command == "rescore":
+        await _rescore(today, dry_run=args.dry_run)
+        return
     if args.command == "migrate":
         print("date-window migration applied")
         return

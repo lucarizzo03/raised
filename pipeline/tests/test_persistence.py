@@ -63,6 +63,28 @@ class PersistenceTests(unittest.TestCase):
         db.persist_run([], self.today)
         self.assertEqual(self.conn.execute("select count(*) from processed_articles").fetchone()[0], 0)
 
+    def test_rescore_replaces_founder_answers_and_reflags(self):
+        from src.models import Signal
+        c = self.company()
+        c.signals = [Signal(signal_type="technical_founders", value="yes", confidence=0.52, needs_review=True),
+                     Signal(signal_type="icp_fit", value="2.5", confidence=0.55, needs_review=True),
+                     Signal(signal_type="sells_to", value="B2B", confidence=0.6, needs_review=True),
+                     Signal(signal_type="sales_role", value="yes (AE)", confidence=0.9)]
+        db.persist_run([c], self.today - timedelta(days=1))
+        loaded = [x for x in db.load_scored_companies() if x.id == c.id][0]
+        self.assertEqual(len(loaded.signals), 4)
+        loaded.signals = [s for s in loaded.signals if s.signal_type not in db.FOUNDER_SIGNALS] + [
+            Signal(signal_type="technical_founders", value="unknown", confidence=0.9)]
+        loaded.score, loaded.explanation, loaded.rules_fired = 42, "rescored", ["x"]
+        db.save_rescore([loaded], self.today)
+        rows = dict(self.conn.execute("select signal_type, value from signals where company_id=%s", (c.id,)).fetchall())
+        self.assertEqual(rows["technical_founders"], "unknown")  # old guess replaced, not kept
+        self.assertEqual(rows["sales_role"], "yes (AE)")          # other answers untouched
+        flags = dict(self.conn.execute("select signal_type, needs_review from signals where company_id=%s", (c.id,)).fetchall())
+        self.assertFalse(flags["icp_fit"])   # 0.55 clears the 0.4 ICP bar
+        self.assertFalse(flags["sells_to"])  # 0.6 clears the 0.5 sells-to bar
+        self.assertEqual(self.conn.execute("select score from ranked_companies where company_id=%s", (c.id,)).fetchone()[0], 42)
+
     def test_rejected_companies_has_row_level_security(self):
         enabled = self.conn.execute("select relrowsecurity from pg_class where oid = 'rejected_companies'::regclass").fetchone()[0]
         self.assertTrue(enabled)

@@ -76,6 +76,68 @@ def load_existing() -> list[Company]:
     return [Company.model_validate(row) for row in rows]
 
 
+FOUNDER_SIGNALS = ("technical_founders", "first_sales_hire")
+
+
+def load_scored_companies() -> list[Company]:
+    """Every company with a score, with its stored signals, for rescoring."""
+    from .models import Signal
+
+    companies = [c for c in load_existing()]
+    with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+        scored = {r["company_id"] for r in cur.execute("select distinct company_id from scores")}
+        rows = cur.execute(
+            "select company_id, signal_type, value, confidence, needs_review, source_url, detected_at "
+            "from signals order by id"
+        ).fetchall()
+    by_company: dict[int, list] = {}
+    for r in rows:
+        by_company.setdefault(r.pop("company_id"), []).append(Signal.model_validate(r))
+    out = []
+    for c in companies:
+        if c.id in scored:
+            c.signals = by_company.get(c.id, [])
+            out.append(c)
+    return out
+
+
+def save_rescore(companies: list[Company], run_date: date) -> dict:
+    """One transaction: replace each company's founder answers with the new
+    ones, re-flag stored answers under the per-question review bars, and write
+    fresh scores. An interrupted rescore changes nothing."""
+    with get_conn() as conn, conn.transaction():
+        for c in companies:
+            conn.execute(
+                "delete from signals where company_id = %s and signal_type = any(%s)",
+                (c.id, list(FOUNDER_SIGNALS)),
+            )
+            for s in c.signals:
+                if s.signal_type in FOUNDER_SIGNALS:
+                    conn.execute(
+                        "insert into signals (company_id, signal_type, value, confidence, needs_review, source_url, detected_at) "
+                        "values (%s, %s, %s, %s, %s, %s, %s)",
+                        (c.id, s.signal_type, s.value, s.confidence, s.needs_review, s.source_url, s.detected_at),
+                    )
+            conn.execute(
+                """
+                insert into scores (company_id, score, explanation, rules_fired, run_date)
+                values (%s, %s, %s, %s, %s)
+                on conflict (company_id, run_date) do update set
+                    score = excluded.score, explanation = excluded.explanation, rules_fired = excluded.rules_fired
+                """,
+                (c.id, c.score, c.explanation, json.dumps(c.rules_fired), run_date),
+            )
+        reflagged = 0
+        for signal_type, threshold in config.REVIEW_THRESHOLDS.items():
+            reflagged += conn.execute(
+                "update signals set needs_review = (value <> 'unknown' and confidence < %s) "
+                "where signal_type = %s and needs_review is distinct from (value <> 'unknown' and confidence < %s)",
+                (threshold, signal_type, threshold),
+            ).rowcount
+    log.info("rescored %d companies for %s; re-flagged %d stored answers", len(companies), run_date, reflagged)
+    return {"rescored": len(companies), "reflagged": reflagged}
+
+
 def dashboard_summary() -> dict:
     with get_conn() as conn:
         count, oldest, newest = conn.execute("select count(*), min(raised_date), max(raised_date) from ranked_companies").fetchone()

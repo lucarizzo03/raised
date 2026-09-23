@@ -21,6 +21,13 @@ def _signal_yes(company: Company, signal_type: str) -> bool:
     )
 
 
+def _latest_yes(company: Company, signal_type: str) -> bool:
+    """For one-per-company judgments: only the most recent answer counts, so a
+    re-judged "unknown" replaces an older guessed "yes"."""
+    sig = _latest(company, signal_type)
+    return bool(sig and sig.value.startswith("yes"))
+
+
 def _has_sales_role(company: Company) -> bool:
     return _signal_yes(company, "sales_role")
 
@@ -98,7 +105,7 @@ def score_company(company: Company) -> None:
         score += _WEIGHTS["round_seed_to_b"]
         rules.append("round_seed_to_b")
 
-    if _signal_yes(company, "first_sales_hire") and _has_sales_role(company):
+    if _latest_yes(company, "first_sales_hire") and _has_sales_role(company):
         score += _WEIGHTS["first_sales_hire"]
         rules.append("first_sales_hire")
 
@@ -106,7 +113,7 @@ def score_company(company: Company) -> None:
         score += _WEIGHTS["any_sales_role_open"]
         rules.append("any_sales_role_open")
 
-    if _signal_yes(company, "technical_founders"):
+    if _latest_yes(company, "technical_founders"):
         score += _WEIGHTS["technical_founders"]
         rules.append("technical_founders")
 

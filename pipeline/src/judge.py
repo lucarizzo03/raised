@@ -338,13 +338,34 @@ async def judge_job(company: Company, job: JobPosting) -> None:
         job.department = job.department or "Sales"
 
 
+def _open_sales_roles(company: Company) -> list[str]:
+    """Titles Jev already judged to be sales roles ("yes (Account Executive)")."""
+    return [
+        s.value.split("(", 1)[1].rstrip(")") if "(" in s.value else "sales role"
+        for s in company.signals
+        if s.signal_type == "sales_role" and s.value.startswith("yes")
+    ]
+
+
 async def judge_founders(company: Company) -> None:
     if not company.about_text:
         return
+    open_roles = _open_sales_roles(company)
     state = (
         f"company: {company.name}\n"
+        f"open sales roles: {', '.join(open_roles) if open_roles else 'none found'}\n"
         f"team/about page excerpt:\n{company.about_text[:2500]}"
     )
+    # An open sales role is positive evidence about the sales team, so
+    # "unknown" is only offered when there is none.
+    first_hire_answers = {
+        "yes": "No existing sales or go-to-market leadership, so this would be the first sales hire",
+        "no": "The company already has a sales team or sales leader",
+    }
+    if not open_roles:
+        first_hire_answers["unknown"] = (
+            "The text says nothing about the company's sales team, and no sales roles are open"
+        )
     questions = _questions(
         # Many about pages never name the founders; "unknown" keeps that
         # missing data from turning into a coin-flip yes/no.
@@ -360,8 +381,11 @@ async def judge_founders(company: Company) -> None:
             },
         ),
         first_sales_hire=(
-            "noul",
-            {"instructions": "Does this appear to be the company's first sales hire (no existing sales/GTM leadership on the team)?"},
+            "choice",
+            {
+                "instructions": "Does this appear to be the company's first sales hire (no existing sales/GTM leadership on the team)?",
+                "criteria": first_hire_answers,
+            },
         ),
     )
     answers = await backend().ask(state, questions)

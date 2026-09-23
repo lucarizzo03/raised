@@ -28,11 +28,15 @@ class ThresholdTests(unittest.TestCase):
         self.assertFalse(record("icp_fit", "2.71", 0.55).needs_review)
 
     def test_other_questions_keep_the_0_7_bar(self):
-        for signal_type in ("genuine_raise", "is_startup", "sells_to", "round", "sales_role",
+        for signal_type in ("genuine_raise", "is_startup", "round", "sales_role",
                             "sales_role_type", "first_sales_hire", "technical_founders", "new_round"):
             with self.subTest(signal_type=signal_type):
                 self.assertTrue(record(signal_type, "yes", 0.69).needs_review)
                 self.assertFalse(record(signal_type, "yes", 0.70).needs_review)
+
+    def test_sells_to_uses_0_5(self):
+        self.assertTrue(record("sells_to", "B2B", 0.49).needs_review)
+        self.assertFalse(record("sells_to", "B2B", 0.50).needs_review)
 
     def test_decision_thresholds_are_unchanged(self):
         # The flag moved; rejecting and hiding still need 0.7 confidence.
@@ -83,6 +87,51 @@ class UnknownFoundersTests(unittest.IsolatedAsyncioTestCase):
             score.score_company(c)
         self.assertIn("technical_founders", c.rules_fired)
         self.assertEqual(config.SCORING_WEIGHTS["technical_founders"], 10)
+
+
+class FirstSalesHireTests(unittest.IsolatedAsyncioTestCase):
+    async def asked(self, open_roles):
+        from src.models import Signal
+        c = company(signals=[Signal(signal_type="sales_role", value=f"yes ({t})", confidence=0.9) for t in open_roles])
+        seen = {}
+
+        async def ask(state, qs):
+            seen.update(state=state, questions=qs)
+            return {"technical_founders": Judgment("unknown", 0.9), "first_sales_hire": Judgment("unknown", 0.8)}
+
+        with patch.object(judge, "backend", return_value=SimpleNamespace(ask=ask)), \
+             patch.object(judge, "_questions", side_effect=lambda **q: q):
+            await judge.judge_founders(c)
+        return seen, c
+
+    async def test_unknown_offered_only_without_open_sales_roles(self):
+        seen, c = await self.asked([])
+        self.assertEqual(set(seen["questions"]["first_sales_hire"][1]["criteria"]), {"yes", "no", "unknown"})
+        self.assertIn("open sales roles: none found", seen["state"])
+        sig = next(s for s in c.signals if s.signal_type == "first_sales_hire")
+        self.assertEqual((sig.value, sig.needs_review), ("unknown", False))
+
+    async def test_open_sales_roles_are_evidence_so_no_unknown(self):
+        seen, _ = await self.asked(["Account Executive", "Head of Sales"])
+        self.assertEqual(set(seen["questions"]["first_sales_hire"][1]["criteria"]), {"yes", "no"})
+        self.assertIn("open sales roles: Account Executive, Head of Sales", seen["state"])
+
+
+class LatestAnswerTests(unittest.TestCase):
+    def test_a_newer_unknown_replaces_an_older_guessed_yes(self):
+        from src.models import Signal
+        c = company(signals=[
+            Signal(signal_type="sales_role", value="yes (AE)", confidence=0.9),
+            Signal(signal_type="technical_founders", value="yes", confidence=0.52),
+            Signal(signal_type="first_sales_hire", value="yes", confidence=0.55),
+            Signal(signal_type="technical_founders", value="unknown", confidence=0.9),
+            Signal(signal_type="first_sales_hire", value="no", confidence=0.8),
+        ])
+        with patch.object(score, "now_utc", return_value=SimpleNamespace(date=lambda: date(2026, 9, 22))):
+            score.score_company(c)
+        self.assertNotIn("technical_founders", c.rules_fired)
+        self.assertNotIn("first_sales_hire", c.rules_fired)
+        self.assertIn("any_sales_role_open", c.rules_fired)
 
 
 if __name__ == "__main__":
