@@ -14,6 +14,7 @@ from . import config
 from .fetch import Fetcher
 from .judge import decide_investigation, judge_company, judge_founders
 from .models import Company
+from .resilience import run_each
 
 log = logging.getLogger(__name__)
 
@@ -87,10 +88,20 @@ async def investigate_company(company: Company, fetcher: Fetcher) -> None:
 
 
 async def investigate_all(companies: list[Company]) -> None:
+    """Skips companies an earlier stage failed; marks new failures."""
     fetcher = Fetcher()
+
+    async def one(company: Company) -> None:
+        await investigate_company(company, fetcher)
+        # Founder/first-hire judgments run after enrichment so they see about text.
+        await judge_founders(company)
+
     try:
-        await asyncio.gather(*(investigate_company(c, fetcher) for c in companies))
+        _, failed = await run_each(
+            [c for c in companies if not c.failed_stage], one,
+            stage="investigate", label=lambda c: c.name,
+        )
     finally:
         await fetcher.close()
-    # Founder/first-hire judgments run after enrichment so they see about text.
-    await asyncio.gather(*(judge_founders(c) for c in companies))
+    for c in failed:
+        c.failed_stage = "investigate"

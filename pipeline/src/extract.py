@@ -11,7 +11,8 @@ from pydantic import ValidationError
 from . import config, domains, llm
 from .dates import article_publication_date, now_utc
 from .fetch import Fetcher, normalize_name
-from .models import Company, FeedItem, FundingExtraction, Round, Signal
+from .models import Company, FeedItem, FundingExtraction, Signal
+from .resilience import run_each
 
 log = logging.getLogger(__name__)
 
@@ -80,17 +81,13 @@ async def extract_companies(items: list[FeedItem], window_days: int = config.ING
         recent = [i for i in items if i.published and cutoff <= i.published <= today]
         log.info("article publication recheck: kept=%d skipped=%d", len(recent), len(items) - len(recent))
         items = recent
-        sem = asyncio.Semaphore(config.HTTP_MAX_CONCURRENCY)
-
-        async def bounded_extract(item):
-            async with sem:
-                return await extract_one(item)
-
-        extractions = await asyncio.gather(*(bounded_extract(i) for i in items))
+        # Model concurrency is capped inside llm; a failed article is skipped
+        # unless so many fail that the provider must be down.
+        extractions, _ = await run_each(items, extract_one, stage="extract", label=lambda i: i.url)
 
         # Resolve a domain from the article itself. Never from the name.
         pending: list[tuple[FeedItem, FundingExtraction, str | None, str]] = []
-        for item, ext in zip(items, extractions):
+        for item, ext in zip(items, extractions, strict=True):
             if ext is None or ext.not_funding_article or not ext.company_name:
                 continue
             domain, source = domains.pick_domain(
@@ -117,7 +114,7 @@ async def extract_companies(items: list[FeedItem], window_days: int = config.ING
     # onto each other before.
     seen_keys: set[str] = set()
     companies: list[Company] = []
-    for (item, ext, domain, source), ok in zip(pending, verified):
+    for (item, ext, domain, source), ok in zip(pending, verified, strict=True):
         name_key = normalize_name(ext.company_name)
         if domain and not ok:
             log.info("domain %s rejected for %s (unverified)", domain, ext.company_name)

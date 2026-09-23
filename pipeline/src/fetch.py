@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import re
 from urllib.parse import urlparse
@@ -32,27 +33,71 @@ def html_to_text(html: str, limit: int = config.ARTICLE_TEXT_LIMIT) -> str:
     return text.strip()[:limit]
 
 
+class BlockedURL(httpx.RequestError):
+    """A URL (or redirect target) the pipeline refuses to fetch."""
+
+
+def is_public_http_url(url: httpx.URL) -> bool:
+    """http(s) only, and never an IP literal in a private, loopback,
+    link-local (cloud metadata) or otherwise reserved range. URLs come from
+    third-party articles, so the runner must not be pointed at itself."""
+    if url.scheme not in ("http", "https") or not url.host:
+        return False
+    host = url.host.strip("[]").lower()
+    if host == "localhost" or host.endswith(".localhost") or host.endswith(".internal"):
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return True
+    return ip.is_global
+
+
+async def _check_request(request: httpx.Request) -> None:
+    # Runs for the first request and for every redirect hop.
+    if not is_public_http_url(request.url):
+        raise BlockedURL(f"blocked URL {request.url}", request=request)
+
+
 class Fetcher:
-    def __init__(self) -> None:
+    def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._sem = asyncio.Semaphore(config.HTTP_MAX_CONCURRENCY)
         self._client = httpx.AsyncClient(
+            transport=transport,
             timeout=config.HTTP_TIMEOUT,
             follow_redirects=True,
+            max_redirects=5,
             headers={"User-Agent": BROWSER_UA},
+            event_hooks={"request": [_check_request]},
         )
 
     async def close(self) -> None:
         await self._client.aclose()
 
     async def get(self, url: str, **kwargs) -> httpx.Response | None:
+        """GET with a body size cap. None on any failure or oversized body."""
         async with self._sem:
             try:
-                resp = await self._client.get(url, **kwargs)
-                if resp.status_code >= 400:
-                    log.debug("GET %s -> %s", url, resp.status_code)
-                    return None
-                return resp
-            except (httpx.HTTPError, asyncio.TimeoutError) as exc:
+                async with self._client.stream("GET", url, **kwargs) as resp:
+                    if resp.status_code >= 400:
+                        log.debug("GET %s -> %s", url, resp.status_code)
+                        return None
+                    declared = resp.headers.get("content-length", "")
+                    if declared.isdigit() and int(declared) > config.MAX_RESPONSE_BYTES:
+                        log.debug("GET %s too large (%s bytes)", url, declared)
+                        return None
+                    body = bytearray()
+                    async for chunk in resp.aiter_bytes():
+                        body += chunk
+                        if len(body) > config.MAX_RESPONSE_BYTES:
+                            log.debug("GET %s exceeded %d bytes", url, config.MAX_RESPONSE_BYTES)
+                            return None
+                    # Body is already decoded, so drop the encoding headers.
+                    headers = {k: v for k, v in resp.headers.items()
+                               if k.lower() not in ("content-encoding", "content-length", "transfer-encoding")}
+                    return httpx.Response(resp.status_code, headers=headers,
+                                          content=bytes(body), request=resp.request)
+            except (httpx.HTTPError, asyncio.TimeoutError, ValueError) as exc:
                 log.debug("GET %s failed: %s", url, exc)
                 return None
 

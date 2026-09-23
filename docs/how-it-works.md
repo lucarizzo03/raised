@@ -103,8 +103,11 @@ Code: [extraction](../pipeline/src/extract.py) ·
   `TYPESAFE_API_KEY` exists, otherwise Claude. `ANTHROPIC_MODEL` overrides the
   Claude model.
 - Fallback to Claude only happens **when the Jev backend starts up**, not on
-  individual failed Jev requests. Model-service failures can fail the run;
-  invalid extracted records are logged and skipped.
+  individual failed Jev requests.
+- **Failures:** at most 8 model calls run at once. Rate limits, overloads and
+  timeouts are retried with backoff. A company that still fails is skipped for
+  the run; if over 25% of a stage fails, the run aborts before writing
+  anything. Invalid extracted records are logged and skipped.
 
 ---
 
@@ -157,6 +160,7 @@ Defined in [`pipeline/src/config.py`](../pipeline/src/config.py).
 |---|---|
 | Raise too old, too far before its article, or in the future | Rejected as `stale` |
 | Jev says "not a new round" with ≥ 0.7 confidence | Rejected as `not_new_round` |
+| Jev says "not a funding raise" or "not a startup" with ≥ 0.7 confidence | Rejected as `not_startup_raise`, unless it would reject over half of a batch of 4+ (treated as a model problem and skipped) |
 | Missing raise date, article date or evidence; or future article date | Quarantined as `source_unverifiable` |
 | New-round answer is uncertain | Flagged for review; continues if date checks pass |
 | Company passes the 90-day cutoff on a later run | `excluded = true`, reason `aged out` |
@@ -206,7 +210,8 @@ Additive points, max **120**. Values are in `SCORING_WEIGHTS` in
 | `scores` | Score, explanation and fired rules; one per company per `run_date` |
 | `decisions` | Investigation questions, actions, confidence and round numbers |
 | `rejected_companies` | Rejection/quarantine history with snapshots |
-| `pipeline_settings` | Display window and one-time backfill status |
+| `pipeline_settings` | Display window, one-time backfill status and last successful run |
+| `pipeline_status` | Read-only view of the last successful run time, for the dashboard |
 | `ranked_companies` | Each company's latest score, filtered for display |
 
 `ranked_companies` hides excluded companies, raises outside the display window,

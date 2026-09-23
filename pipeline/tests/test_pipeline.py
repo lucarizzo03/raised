@@ -2,7 +2,7 @@ import unittest
 from contextlib import ExitStack
 from datetime import date, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 from src import config, dates, extract, main
 from src.models import Company, FeedItem
@@ -37,6 +37,32 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
                 discover.assert_awaited_once_with(False, expected)
                 age_out.assert_called_once()
                 self.assertEqual(persist.call_args.kwargs["backfill"], backfill)
+
+    async def test_gate_rejections_are_persisted_but_not_investigated(self):
+        today = dates.now_utc().date()
+        keep = Company(name="Keep", dedupe_key="keep", source_url="", raised_date=today, article_published_at=today, funding_evidence="a")
+        bar = keep.model_copy(update={"name": "Bar", "dedupe_key": "bar"})
+
+        async def judge_all(companies):
+            bar.rejection_reason = "not_startup_raise"
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(main, "_discover", new_callable=AsyncMock, return_value=[keep, bar]))
+            stack.enter_context(patch.object(main, "_dedupe_against_db", new_callable=AsyncMock, side_effect=lambda c: c))
+            for name in ("migrate", "exclude_aged_out"):
+                stack.enter_context(patch.object(main.db, name))
+            persist = stack.enter_context(patch.object(main.db, "persist_run", return_value={}))
+            stack.enter_context(patch.object(main.db, "dashboard_summary", return_value={}))
+            stack.enter_context(patch("src.judge.judge_new_round", new_callable=AsyncMock))
+            stack.enter_context(patch("src.jobs.fetch_all_jobs", new_callable=AsyncMock))
+            stack.enter_context(patch("src.judge.judge_all", side_effect=judge_all))
+            investigate = stack.enter_context(patch("src.investigate.investigate_all", new_callable=AsyncMock))
+            stack.enter_context(patch("builtins.print"))
+            await main.main(["run"])
+        self.assertEqual([c.name for c in investigate.await_args.args[0]], ["Keep"])
+        self.assertEqual([c.name for c in persist.call_args.args[0]], ["Keep", "Bar"])
+        self.assertGreater(keep.score, 0)
+        self.assertEqual(bar.score, 0)
 
     async def test_completed_backfill_stops_before_discovery(self):
         with patch.object(main.db, "migrate"), patch.object(main.db, "backfill_completed", return_value=True), patch.object(main, "_discover", new_callable=AsyncMock) as discover:

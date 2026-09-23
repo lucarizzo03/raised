@@ -109,7 +109,11 @@ _BOARDS = [_try_ashby, _try_greenhouse, _try_lever]
 async def fetch_jobs(company: Company, fetcher: Fetcher) -> list[JobPosting]:
     for slug in slug_candidates(company):
         for board in _BOARDS:
-            jobs = await board(fetcher, slug)
+            try:
+                jobs = await board(fetcher, slug)
+            except Exception as exc:  # malformed board payload: try the next one
+                log.warning("%s: %s failed for slug %s: %s", company.name, board.__name__, slug, exc)
+                continue
             if jobs:
                 log.info("%s: %d jobs on %s (slug=%s)", company.name, len(jobs), board.__name__, slug)
                 return jobs
@@ -122,5 +126,5 @@ async def fetch_all_jobs(companies: list[Company]) -> None:
         results = await asyncio.gather(*(fetch_jobs(c, fetcher) for c in companies))
     finally:
         await fetcher.close()
-    for company, jobs in zip(companies, results):
+    for company, jobs in zip(companies, results, strict=True):
         company.jobs = jobs

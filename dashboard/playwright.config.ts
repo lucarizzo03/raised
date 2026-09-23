@@ -5,8 +5,8 @@ const deploymentUrl = process.env.PLAYWRIGHT_BASE_URL;
 export default defineConfig({
   testDir: "./tests",
   testMatch: deploymentUrl
-    ? ["**/dashboard.spec.ts", "**/deployed-logos.spec.ts"]
-    : ["**/dashboard.spec.ts", "**/company-logo.spec.ts", "**/logo-route.spec.ts"],
+    ? ["**/dashboard.spec.ts", "**/deployed-logos.spec.ts", "**/security-headers.spec.ts"]
+    : ["**/dashboard.spec.ts", "**/company-logo.spec.ts", "**/logo-route.spec.ts", "**/security-headers.spec.ts"],
   fullyParallel: true,
   workers: 2,
   use: {

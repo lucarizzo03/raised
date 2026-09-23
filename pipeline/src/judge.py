@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from . import config, llm
 from .models import Company, Decision, JobPosting, Round, SalesRoleType, Signal
+from .resilience import model_slots, run_each, with_retries
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +56,11 @@ class JevBackend:
         self._clf = TypeSafeClassifier()
 
     async def ask(self, state: str, questions: dict) -> dict[str, Judgment]:
-        resp = await self._clf.ainvoke({"state": state, "questions": questions})
+        async def call():
+            async with model_slots():
+                return await self._clf.ainvoke({"state": state, "questions": questions})
+
+        resp = await with_retries(call, what="Jev")
         out: dict[str, Judgment] = {}
         for name, ans in resp.answers.items():
             if ans.type == "noul":
@@ -379,32 +384,60 @@ def _latest(company: Company, signal_type: str) -> Signal | None:
     return hits[-1] if hits else None
 
 
+def _gate_signal(company: Company) -> Signal | None:
+    """The confident "no" that trips the gate, if any."""
+    for signal_type in ("genuine_raise", "is_startup"):
+        sig = _latest(company, signal_type)
+        if sig and sig.value.startswith("no") and sig.confidence >= config.CONFIDENCE_REVIEW_THRESHOLD:
+            return sig
+    return None
+
+
+_GATE_LABELS = {
+    "genuine_raise": "not a funding raise",
+    "is_startup": "not a venture-backed technology startup",
+}
+
+
 def gate_reason(company: Company) -> str | None:
-    """Fix 2 drop rule. Returns a reason to reject, or None to keep.
+    """Returns a reason to reject, or None to keep.
 
     A confident "no" on either gate drops the company. An unconfident answer
     keeps it and leaves the needs_review flag that _record already set.
     """
-    for signal_type, label in (
-        ("genuine_raise", "not a funding raise"),
-        ("is_startup", "not a venture-backed technology startup"),
-    ):
-        sig = _latest(company, signal_type)
-        if sig and sig.value.startswith("no") and sig.confidence >= config.CONFIDENCE_REVIEW_THRESHOLD:
-            return f"{label} ({signal_type}=no, confidence {sig.confidence:.2f})"
-    return None
+    sig = _gate_signal(company)
+    if sig is None:
+        return None
+    return f"{_GATE_LABELS[sig.signal_type]} ({sig.signal_type}=no, confidence {sig.confidence:.2f})"
+
+
+async def _judge_company_and_jobs(company: Company) -> None:
+    await judge_company(company)
+    await asyncio.gather(*(judge_job(company, j) for j in company.jobs))
 
 
 async def judge_all(companies: list[Company]) -> None:
-    """Company + job judgments in parallel; founder judgments need about pages."""
-    await asyncio.gather(*(judge_company(c) for c in companies))
-    await asyncio.gather(
-        *(judge_job(c, j) for c in companies for j in c.jobs)
-    )
-    rejected = [c for c in companies if gate_reason(c)]
+    """Company + job judgments in parallel; founder judgments need about pages.
+
+    A company whose judgments fail is marked failed_stage and left out of the run.
+    """
+    _, failed = await run_each(companies, _judge_company_and_jobs, stage="judge", label=lambda c: c.name)
+    for c in failed:
+        c.failed_stage = "judge"
+    judged = [c for c in companies if not c.failed_stage]
+    rejected = [c for c in judged if gate_reason(c)]
+    if len(judged) >= config.GATE_MIN_BATCH and len(rejected) / len(judged) > config.GATE_MAX_REJECT_RATE:
+        log.warning(
+            "gate would reject %d of %d companies; not enforcing (likely a model problem)",
+            len(rejected), len(judged),
+        )
+        return
     log.info(
         "gate: evaluated %d companies, rejected %d, kept %d",
-        len(companies), len(rejected), len(companies) - len(rejected),
+        len(judged), len(rejected), len(judged) - len(rejected),
     )
     for c in rejected:
-        log.info("  rejected %s: %s", c.name, gate_reason(c))
+        c.rejection_reason = "not_startup_raise"
+        c.rejection_detail = gate_reason(c)
+        c.excluded, c.excluded_reason = True, "not_startup_raise"
+        log.info("  rejected %s: %s", c.name, c.rejection_detail)

@@ -65,7 +65,7 @@ async def _resolve_google_news_urls(items: list[FeedItem]) -> None:
     except Exception as exc:
         log.warning("google news decode failed: %s", exc)
         return
-    for item, result in zip(items, results):
+    for item, result in zip(items, results, strict=False):
         decoded = (result or {}).get("decoded_url")
         if decoded:
             item.url = decoded

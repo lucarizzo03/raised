@@ -20,6 +20,7 @@ from datetime import date
 
 from . import config, dates, db
 from .models import Company
+from .resilience import run_each
 
 log = logging.getLogger(__name__)
 
@@ -116,16 +117,20 @@ def _print_rejections(companies: list[Company]) -> None:
 async def _screen(companies: list[Company], mock: bool = False) -> list[Company]:
     from .judge import judge_new_round
 
-    sem = asyncio.Semaphore(config.HTTP_MAX_CONCURRENCY)
-
     async def screen(company):
-        async with sem:
-            if not mock:
-                await judge_new_round(company)
-            dates.apply_rejection(company)
+        if not mock:
+            await judge_new_round(company)
+        dates.apply_rejection(company)
 
-    await asyncio.gather(*(screen(c) for c in companies))
-    return [c for c in companies if not c.rejection_reason]
+    _, failed = await run_each(companies, screen, stage="screen", label=lambda c: c.name)
+    for c in failed:
+        c.failed_stage = "screen"
+    return [c for c in companies if not c.rejection_reason and not c.failed_stage]
+
+
+def _without_failed(companies: list[Company]) -> list[Company]:
+    """Failed companies are not persisted; the next run rediscovers them."""
+    return [c for c in companies if not c.failed_stage]
 
 
 async def main(argv: list[str] | None = None) -> None:
@@ -191,6 +196,8 @@ async def main(argv: list[str] | None = None) -> None:
 
     if not args.mock_models:
         await judge.judge_all(eligible)
+    # Gate rejections are persisted with the rest but never investigated or scored.
+    eligible = [c for c in eligible if not c.rejection_reason]
     if args.command == "judge":
         # Fetch about pages so founder/first-hire judgments print too.
         if not args.mock_models:
@@ -209,6 +216,8 @@ async def main(argv: list[str] | None = None) -> None:
 
     if not args.mock_models:
         await investigate.investigate_all(eligible)
+    companies = _without_failed(companies)
+    eligible = _without_failed(eligible)
     ranked = score.rank(eligible)  # scores everything, returns the visible set
     _print_rejections(companies)
     excluded = [c for c in companies if c.excluded]

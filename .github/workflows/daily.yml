@@ -5,22 +5,35 @@ on:
     - cron: "0 13 * * *" # 13:00 UTC daily
   workflow_dispatch:
 
+# Two overlapping runs would double model spend and race on the same run_date.
+concurrency:
+  group: daily-pipeline
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
-      - name: Install pipeline deps
+      - name: Install pipeline deps (hash-pinned)
         working-directory: pipeline
-        run: pip install -r requirements.txt
+        run: pip install --require-hashes -r requirements.txt
 
-      - name: Test date-window rules
+      - name: Test pipeline rules
         working-directory: pipeline
+        env:
+          PYTHON_DOTENV_DISABLED: "1"
         run: python -m unittest discover -s tests -v
 
       - name: Run pipeline
@@ -32,3 +45,28 @@ jobs:
           EDGAR_USER_AGENT: ${{ vars.EDGAR_USER_AGENT }}
           JUDGE_BACKEND: ${{ vars.JUDGE_BACKEND }}
         run: python -m src.main run -v
+
+  # Scheduled failures are easy to miss, so each one opens (or comments on)
+  # a single tracking issue.
+  report-failure:
+    needs: run
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Daily pipeline failing"
+          body="The daily pipeline failed on $(date -u +%Y-%m-%d): $RUN_URL"
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

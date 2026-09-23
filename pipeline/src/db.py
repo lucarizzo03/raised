@@ -22,10 +22,14 @@ def get_conn() -> psycopg.Connection:
     return psycopg.connect(config.DATABASE_URL)
 
 
+MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
+
+
 def migrate() -> None:
-    migration = Path(__file__).resolve().parents[1] / "migrations" / "001_date_windows.sql"
+    """Apply every migration in order. Each file is idempotent, so re-running is safe."""
     with get_conn() as conn:
-        conn.execute(migration.read_text())
+        for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
+            conn.execute(migration.read_text())
         conn.execute(
             "insert into pipeline_settings(singleton, display_window_days) values (true, %s) "
             "on conflict (singleton) do update set display_window_days=excluded.display_window_days",
@@ -115,6 +119,18 @@ def upsert_company(conn: psycopg.Connection, c: Company) -> int:
     return row[0]
 
 
+def _rejection_confidence(c: Company) -> float:
+    if c.rejection_reason == "stale":
+        return 1.0  # a date rule, not a judgment
+    if c.rejection_reason == "not_startup_raise":
+        from .judge import _gate_signal
+
+        signal = _gate_signal(c)
+    else:
+        signal = next((s for s in reversed(c.signals) if s.signal_type == "new_round"), None)
+    return signal.confidence if signal else 0.0
+
+
 def persist_run(companies: list[Company], run_date: date, *, backfill: bool = False, write_scores: bool = True) -> dict:
     added = rejected = 0
     with get_conn() as conn, conn.transaction():
@@ -131,8 +147,7 @@ def persist_run(companies: list[Company], run_date: date, *, backfill: bool = Fa
                 added += 1
             if c.rejection_reason:
                 rejected += 1
-                signal = next((s for s in reversed(c.signals) if s.signal_type == "new_round"), None)
-                confidence = 1.0 if c.rejection_reason == "stale" else (signal.confidence if signal else 0.0)
+                confidence = _rejection_confidence(c)
                 conn.execute("""
                     insert into rejected_companies
                         (company_id, name, reason, confidence, source_url, run_date,
@@ -178,6 +193,8 @@ def persist_run(companies: list[Company], run_date: date, *, backfill: bool = Fa
                 (c.id, c.score, c.explanation, json.dumps(c.rules_fired), run_date),
             )
         aged = age_out(conn, run_date)
+        if write_scores:  # a real run, not cleanup; committed with its results
+            conn.execute("update pipeline_settings set last_run_completed_at=now() where singleton")
         if backfill:
             conn.execute("update pipeline_settings set backfill_completed_at=now(), backfill_added_count=%s where singleton", (added,))
     log.info("persisted %d companies for run %s; added=%d rejected=%d aged_out=%d", len(companies), run_date, added, rejected, len(aged))
