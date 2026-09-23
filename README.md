@@ -8,9 +8,7 @@ them for outreach.
 > **Claude extracts. Jev judges. Python scores. Supabase stores. Next.js displays.**
 
 - [How it works](#how-it-works)
-- [Commands](#commands)
 - [Scoring](#scoring)
-- [Testing](#testing)
 - [Deployment](#deployment)
 - [More docs](#more-docs)
 
@@ -52,27 +50,6 @@ Next.js 16 · React 19 · Tailwind 4 · Vercel · GitHub Actions
 
 ---
 
-## Commands
-
-Run from `pipeline/` as `../.venv/bin/python run_pipeline <command>`.
-
-| Command | What it does | Writes to DB? |
-|---|---|:---:|
-| `run` *(default)* | Full daily pipeline | ✓ |
-| `--backfill` | Full pipeline with a 30-day lookback — **run once only** | ✓ |
-| `cleanup` | Re-check stored companies' dates and sources (calls models) | ✓ |
-| `migrate` | Apply schema migrations and settings | ✓ |
-| `discover` | Stop after extraction and dedupe; print candidates | |
-| `jobs` | …plus date screening and job boards | |
-| `judge` | …plus Jev judgments | |
-| `score` | …plus scoring; print the ranking | |
-| `ranked` | Print the latest score batch | |
-
-Flags: `-v` for verbose logs · `--mock-models` to skip model calls
-(diagnostic commands only, e.g. `discover --mock-models`).
-
----
-
 ## Scoring
 
 Points are additive (max **120**) — not a percentage.
@@ -94,23 +71,6 @@ Weights live in [`pipeline/src/config.py`](pipeline/src/config.py).
 
 ---
 
-## Testing
-
-```bash
-# Pipeline (from pipeline/)
-PYTHON_DOTENV_DISABLED=1 ../.venv/bin/python -B -m unittest discover -s tests -v
-
-# Dashboard (from dashboard/)
-npx playwright install chromium
-npm test
-```
-
-`npm test` starts a production build on **port 3100** using sample data.
-See [docs/operations.md](docs/operations.md#testing) for database tests and
-checking the live site.
-
----
-
 ## Deployment
 
 - **Dashboard** → Vercel, with root directory `dashboard/` and `SUPABASE_URL` +
@@ -125,7 +85,5 @@ Details: [docs/operations.md](docs/operations.md#deployment).
 
 ## More docs
 
-| Doc | Covers |
-|---|---|
-| [docs/how-it-works.md](docs/how-it-works.md) | Pipeline stages, model behavior, date windows, rejection rules, scoring formulas, database tables |
-| [docs/operations.md](docs/operations.md) | Setup gotchas, deployment, testing, known limitations |
+- [How it works](docs/how-it-works.md): the pipeline, models, date rules, scoring and database
+- [Operations](docs/operations.md): deployment, testing and known limitations
