@@ -56,7 +56,7 @@ Next.js 16 · React 19 · Tailwind 4 · Vercel · GitHub Actions
 
 Jev answers every judgment question in the pipeline. Claude only reads articles;
 Python only applies rules to Jev's answers. Each answer comes with a confidence,
-and anything under **0.7** (**0.4** for ICP fit, a 5-step rubric) is flagged
+and anything under **0.7** (**0.4** for ICP fit, **0.5** for "sells to") is flagged
 "needs review" on the dashboard. An "unknown" answer is missing data, not doubt,
 and is never flagged.
 
@@ -71,7 +71,7 @@ and is never flagged.
 | 7 | Each sales-looking job | Is this a sales role? | yes / no | Any "yes" earns +15; the titles show on the dashboard |
 | 8 | Each sales-looking job | What kind? | AE / SDR / Head of Sales / Other | Shown on the dashboard only |
 | 9 | About page | Are the founders technical? | yes / no / unknown | +10 for yes; "unknown" (page doesn't name the founders) scores nothing and shows "Founders: unknown" |
-| 10 | About page | Is this their first sales hire? | yes / no | +30, only if #7 also found an open sales role |
+| 10 | About page | Is this their first sales hire? | yes / no / unknown | +30 for yes, only if #7 also found an open sales role. "Unknown" (nothing known about the sales team) is only allowed when no sales roles are open, and scores nothing |
 | 11 | Investigation | Enough evidence, or dig further? | score now / check careers / search news / fetch about page | Gathers that evidence and re-asks #2–#6; at most 3 rounds |
 
 **Jev doesn't decide:** what an article says (Claude), whether a domain is

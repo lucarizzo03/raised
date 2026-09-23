@@ -27,6 +27,10 @@ For an overview, see the [README](../README.md).
 - **`--mock-models`** stubs extraction and judgments. It's rejected for `run` and
   `cleanup`, and doesn't stop database reads or job-board requests.
 - **`run_pipeline` and `python -m src.main`** are the same entry point.
+- **`rescore [--dry-run]`** re-asks the founder questions for every scored
+  company, replaces the old answers, re-applies the review thresholds to stored
+  answers and writes fresh scores, in one transaction. Use it after changing
+  how judgments are asked or scored. It calls Jev and refetches about pages.
 - **Dependencies are hash-pinned.** Edit `pipeline/requirements.in`, then
   regenerate `requirements.txt` with the command at the top of that file.
   Install with `pip install --require-hashes -r requirements.txt`.
