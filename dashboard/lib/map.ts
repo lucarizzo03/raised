@@ -62,6 +62,7 @@ function isYes(s: SignalRow): boolean {
 }
 
 const SIGNAL_LABELS: Record<string, string> = {
+  new_round: "New round",
   genuine_raise: "Genuine raise",
   is_startup: "Venture-backed startup",
   sells_to: "Sells to",
@@ -83,6 +84,42 @@ function signalLabel(s: SignalRow): string {
     return "Founders: unknown";
   }
   return `${SIGNAL_LABELS[s.signal_type] ?? s.signal_type}: ${s.value}`;
+}
+
+// Company-level answers, in the order they read best. Anything not listed
+// follows in its stored order.
+const SIGNAL_ORDER = [
+  "new_round", "genuine_raise", "is_startup", "round", "sells_to", "icp_fit",
+  "technical_founders", "first_sales_hire", "domain_unverified",
+];
+const JOB_SIGNALS = new Set(["sales_role", "sales_role_type"]);
+
+/**
+ * What the row shows: the current answer to each question, not every answer
+ * ever given. The pipeline re-asks company questions while it investigates and
+ * keeps each answer; scoring uses the latest, so the dashboard does too. Jobs
+ * show one line per actual sales role (the "not sales" answers and the
+ * role-type rows are only audit detail). Rows arrive ordered by id, oldest first.
+ */
+export function currentSignals(raw: SignalRow[]): SignalRow[] {
+  const latest = new Map<string, SignalRow>();
+  const jobs = new Map<string, SignalRow>();
+  for (const s of raw) {
+    if (s.signal_type === "sales_role") jobs.set(s.source_url ?? s.value, s);
+    else if (!JOB_SIGNALS.has(s.signal_type)) latest.set(s.signal_type, s);
+  }
+  const rank = (t: string) => {
+    const i = SIGNAL_ORDER.indexOf(t);
+    return i === -1 ? SIGNAL_ORDER.length : i;
+  };
+  const company = [...latest.values()].sort((a, b) => rank(a.signal_type) - rank(b.signal_type));
+  // Two postings with the same title read as one role, as in the badges.
+  const hiring = new Map<string, SignalRow>();
+  for (const s of jobs.values()) {
+    const title = parenValue(s.value) ?? s.value;
+    if (isYes(s) && !hiring.has(title)) hiring.set(title, s);
+  }
+  return [...company, ...hiring.values()];
 }
 
 /**
@@ -154,7 +191,7 @@ export function toCompanies(
   }
 
   return rows.map((r) => {
-    const raw = byCompany.get(r.company_id) ?? [];
+    const raw = currentSignals(byCompany.get(r.company_id) ?? []);
     const round = ROUND_LABELS[r.round ?? ""] ?? "Later";
     const salesTitles = raw
       .filter((s) => s.signal_type === "sales_role" && isYes(s))
