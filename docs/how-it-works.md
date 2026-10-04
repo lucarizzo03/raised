@@ -25,6 +25,7 @@ flowchart TD
         Prepare["Apply migration and age-out rules"]
         Sources["TechCrunch RSS / Google News RSS<br/>Filter publication dates"]
         Fetch["Fetch article text<br/>Recheck original publication date"]
+        Prefilter["Python: one article per raise, skip known companies<br/>Jev: skip clear non-early-stage raises"]
         Extract["Claude Haiku 4.5<br/>Extract a newly announced funding round"]
         Identity["Python<br/>Verify domain and deduplicate"]
         Gate["Jev: is this a new round?<br/>Python: date and evidence checks"]
@@ -35,7 +36,7 @@ flowchart TD
         Reject["Record rejection reason and evidence<br/>Exclude company without deleting it"]
     end
 
-    Schedule --> Prepare --> Sources --> Fetch --> Extract --> Identity --> Gate
+    Schedule --> Prepare --> Sources --> Fetch --> Prefilter --> Extract --> Identity --> Gate
     Gate -->|Eligible| Enrich --> Judge
     Judge -->|Gather more evidence| Enrich
     Judge -->|Score now or investigation budget exhausted| Founders --> Score
@@ -76,6 +77,7 @@ SDK's default service configuration (no separate Jev version is pinned).
 | Task | Model | Input → output |
 |---|---|---|
 | Funding extraction | Claude | Article title, date and text → company, domain, round, USD amount, announcement date, investors, supporting quote (or `not_funding_article`) |
+| Prefilter | Jev | Headline + article opening → is this a new pre-seed to Series B raise? |
 | New-round check | Jev | Funding evidence + claimed round → is this a new round, not an older one? |
 | Company judgments | Jev | Company facts + enrichment → genuine raise, startup, B2B/B2C/Both/Unclear, round label, ICP fit. What each answer changes: [Jev in detail](#jev-in-detail) |
 | Job classification | Jev | Job title, department, description → sales or not; AE, SDR, Head of Sales or Other |
@@ -99,7 +101,8 @@ Code: [extraction](../pipeline/src/extract.py) ·
   announced in the article is extracted. A missing announcement date falls back
   to the article's publication date — never today's date.
 - **Jev** receives extracted fields plus short job, about/careers and news
-  excerpts — not the full article.
+  excerpts — not the full article. Before extraction it sees only a headline
+  and the article's opening (the prefilter).
 - Jev `Noul` answers become yes/no plus confidence; `Choice` gives categories;
   `Score` gives the ICP position. Anything below **0.7** confidence (**0.4**
   for ICP fit) is flagged `needs_review`; "unknown" answers are never flagged.
@@ -125,6 +128,7 @@ and is never flagged.
 
 | # | When | Jev decides | Type | Answer | What the pipeline does with it |
 |---|---|---|---|---|---|
+| 0 | Before Claude | Does this headline and opening announce a new pre-seed to Series B raise? | Noul | yes / no | A "no" with at least **0.8** confidence means Claude never reads the article (`prefilter_skipped`, with the confidence kept in `processed_articles.detail`). Anything less sure goes on to Claude |
 | 1 | Screening | Is this article announcing a **new** round, not an old one? | Noul | yes / no | A confident "no" rejects the company (`not_new_round`) |
 | 2 | Company | Is this really a company raising money (not a bar, event or product launch)? | Noul | yes / no | A confident "no" rejects it (`not_startup_raise`) |
 | 3 | Company | Is it a venture-backed tech startup? | Noul | yes / no | A confident "no" rejects it (`not_startup_raise`) |
@@ -154,11 +158,12 @@ questions about a piece of text. Raised uses all three types:
   with `yes` / `no` / `unknown` labels.
 - **Several questions share one call.** Jev answers a whole set of questions
   about the same text at once: #2–#6 in one call per company, #7–#8 in one call
-  per job, #9–#10 in one call per company, and #1 and #11 on their own. Before
+  per job, #9–#10 in one call per company, and #0, #1 and #11 on their own. Before
   each run, a one-question Noul checks that Jev is reachable and paid up.
 - **What Jev sees** is short text Raised assembles: the extracted funding facts,
   plus job descriptions, about/careers page excerpts or news headlines as
-  relevant. Never the full article.
+  relevant. The prefilter (#0) sees a headline and the article's first 600
+  characters. Never the full article.
 
 **Jev can do more that Raised doesn't use yet:**
 - The **per-label and per-level probabilities** from Choice and Score (for
@@ -220,7 +225,16 @@ counts as ideal, edit the question in `pipeline/src/judge.py`.
    earlier run (see `processed_articles`) are skipped before fetching, so each
    article is paid for once rather than on every day of the 3-day lookback.
 3. **Extract** — fetch the article, prefer the publisher's original date over
-   the feed date, recheck the window, and call Claude.
+   the feed date and recheck the window. Then, before Claude
+   ([`prefilter.py`](../pipeline/src/prefilter.py)):
+   - **Group** articles by the company named in the headline ("Armadin raises
+     …"), keeping one per raise: one that fetched, TechCrunch first. Headlines
+     that don't fit the pattern stay on their own. Companies already stored
+     are skipped (`known_company`).
+   - **Jev** (#0 below) skips the clear non-early-stage raises.
+   - Claude reads what's left. A group's other articles are marked
+     `duplicate` only once its chosen article was extracted; if that fails,
+     the whole group is retried next run.
 4. **Identity** — pick domain candidates from the article and check the homepage
    mentions the company. Unverified domains are cleared and flagged. Dedupe by
    URL, then verified domain/normalized name, then existing database records.
@@ -313,7 +327,7 @@ Additive points, max **120**. Values are in `SCORING_WEIGHTS` in
 | `rejected_companies` | Rejection/quarantine history with snapshots |
 | `pipeline_settings` | Display window, one-time backfill status and last successful run |
 | `pipeline_status` | Read-only view of the last successful run time, for the dashboard |
-| `processed_articles` | Article URLs with a final outcome, skipped on later runs; pruned after 60 days |
+| `processed_articles` | Article URLs with a final outcome (`company`, `duplicate`, `known_company`, `prefilter_skipped`, `not_funding`, …) and an optional `detail`, skipped on later runs; pruned after 60 days |
 | `ranked_companies` | Each company's latest score, filtered for display |
 
 `ranked_companies` hides excluded companies, raises outside the display window,

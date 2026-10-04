@@ -55,7 +55,12 @@ class PersistenceTests(unittest.TestCase):
         self.assertIsNotNone(self.conn.execute(status).fetchone()[0])
 
     def test_processed_articles_are_saved_read_back_and_pruned(self):
-        db.persist_run([self.company()], self.today, processed_articles={"https://news.example.com/op-ed": "not_funding"})
+        db.persist_run([self.company()], self.today, processed_articles={
+            "https://news.example.com/op-ed": "not_funding",
+            "https://news.example.com/series-c": ("prefilter_skipped", "jev confidence 0.93"),
+        })
+        self.assertEqual(self.conn.execute("select outcome, detail from processed_articles order by url").fetchall(),
+                         [("not_funding", None), ("prefilter_skipped", "jev confidence 0.93")])
         known = db.known_article_urls()
         self.assertIn("https://news.example.com/op-ed", known)
         self.assertIn("https://example.com/article", known)  # company source, normalized

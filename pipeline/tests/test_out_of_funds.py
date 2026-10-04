@@ -65,7 +65,8 @@ class StopImmediatelyTests(unittest.IsolatedAsyncioTestCase):
                  for i in range(10)]
         replies = [{"company_name": f"Co{i}"} for i in range(9)] + [NO_CREDIT]
         with patch.object(extract.llm, "complete_json", AsyncMock(side_effect=replies)), \
-             patch.object(extract, "now_utc", return_value=SimpleNamespace(date=lambda: TODAY)):
+             patch.object(extract, "now_utc", return_value=SimpleNamespace(date=lambda: TODAY)), \
+             patch.object(extract.prefilter, "screen", AsyncMock(return_value={})):
             with self.assertRaises(resilience.OutOfFunds):
                 await extract.extract_companies(items)
 

@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 async def _discover(
     mock: bool,
     window_days: int = config.INGEST_WINDOW_DAYS,
-    outcomes: dict[str, str] | None = None,
+    outcomes: dict[str, str | tuple[str, str]] | None = None,
 ) -> list[Company]:
     from . import extract, feeds
     from .fetch import normalize_url
@@ -44,7 +44,13 @@ async def _discover(
         known = set()
     fresh = [i for i in items if normalize_url(i.url) not in known]
     log.info("processed articles: skipping %d already processed, %d new", len(items) - len(fresh), len(fresh))
-    return await extract.extract_companies(fresh, window_days, outcomes)
+    try:
+        with db.get_conn() as conn:
+            known_names = db.known_dedupe_keys(conn)
+    except Exception as exc:
+        log.warning("known-company prefilter unavailable: %s", exc)
+        known_names = set()
+    return await extract.extract_companies(fresh, window_days, outcomes, known_names)
 
 
 async def _dedupe_against_db(companies: list[Company]) -> list[Company]:
@@ -251,7 +257,7 @@ async def main(argv: list[str] | None = None) -> None:
 
     window_days = config.BACKFILL_WINDOW_DAYS if args.backfill else config.INGEST_WINDOW_DAYS
     log.info("pipeline mode=%s window_days=%d", "backfill" if args.backfill else "daily", window_days)
-    outcomes: dict[str, str] = {}
+    outcomes: dict[str, str | tuple[str, str]] = {}
     companies = await _discover(args.mock_models, window_days, outcomes)
     companies = await _dedupe_against_db(companies)
 

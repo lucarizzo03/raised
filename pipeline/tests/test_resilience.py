@@ -118,6 +118,7 @@ class IsolationTests(unittest.IsolatedAsyncioTestCase):
         calls = AsyncMock(side_effect=[good, good, RuntimeError("bad"), good, good])
         with patch.object(extract.llm, "complete_json", calls), \
              patch.object(extract, "now_utc", return_value=SimpleNamespace(date=lambda: today)), \
+             patch.object(extract.prefilter, "screen", AsyncMock(return_value={})), \
              patch.object(extract.domains, "pick_domain", return_value=(None, "none")):
             companies = await extract.extract_companies(items)
         self.assertEqual(calls.await_count, 5)
@@ -127,7 +128,8 @@ class IsolationTests(unittest.IsolatedAsyncioTestCase):
         today = date(2026, 9, 22)
         items = [FeedItem(title="a", url="https://example.com/a", published=today, source="t", text="x")]
         with patch.object(extract.llm, "complete_json", AsyncMock(side_effect=RuntimeError("down"))), \
-             patch.object(extract, "now_utc", return_value=SimpleNamespace(date=lambda: today)):
+             patch.object(extract, "now_utc", return_value=SimpleNamespace(date=lambda: today)), \
+             patch.object(extract.prefilter, "screen", AsyncMock(return_value={})):
             with self.assertRaises(resilience.StageFailure):
                 await extract.extract_companies(items)
 

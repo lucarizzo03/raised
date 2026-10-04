@@ -62,6 +62,11 @@ HTTP_MAX_CONCURRENCY = 10
 ARTICLE_TEXT_LIMIT = 12_000  # chars fed to the extraction model
 MAX_RESPONSE_BYTES = 5_000_000  # larger pages are dropped, not truncated mid-parse
 
+# --- Prefilter (before Claude extraction) ---------------------------------------
+# Jev skips an article only when it is at least this sure it is not a new
+# pre-seed to Series B raise; anything less certain still goes to Claude.
+PREFILTER_SKIP_CONFIDENCE = 0.8
+
 # --- Model calls ------------------------------------------------------------------
 MODEL_MAX_CONCURRENCY = 8  # shared by Claude and Jev
 MODEL_MAX_RETRIES = 4
