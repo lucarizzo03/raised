@@ -1,7 +1,7 @@
 # Raised
 
-Finds recently funded startups that look ready to build a sales team, and ranks
-them for outreach.
+Finds startups that just raised a pre-seed to Series B round and look ready to
+build a sales team, and ranks them for outreach.
 
 **[Open the dashboard →](https://raised-lac.vercel.app)**
 
@@ -9,49 +9,67 @@ them for outreach.
 
 ## How it works
 
-Every day at 13:00 UTC, GitHub Actions runs the pipeline:
+Every day at 13:00 UTC, GitHub Actions runs the pipeline once:
 
-1. **Check:** make sure the Claude and Jev accounts work. If either is out of funds, stop and save nothing.
-2. **Discover:** pull new articles from TechCrunch and Google News (last 3 days; each article is read only once).
-3. **Filter:** Python keeps one article per raise (the same raise is often covered by 5+ outlets) and skips companies already stored. Jev then skips articles it is confident aren't a new pre-seed–Series B raise. About half the articles never reach Claude.
-4. **Extract:** Claude Haiku 4.5 pulls out the company, round, amount and date.
-5. **Verify:** Python confirms the company's website and drops duplicates and stale rounds.
-6. **Judge:** Jev answers the questions below.
-7. **Score & save:** Python adds up the points and saves everything to Supabase.
+```mermaid
+flowchart TD
+    A["1. Check<br/>Claude and Jev accounts work"] --> B
+    B["2. Collect<br/>TechCrunch + Google News, last 3 days<br/>skip articles already read"] --> C
+    C["3. Filter<br/>Python: one article per raise<br/>Jev: skip what isn't an early-stage raise"] --> D
+    D["4. Extract<br/>Claude Haiku reads the article:<br/>company, round, amount, date"] --> E
+    E["5. Verify<br/>Python: website, dates, duplicates"] --> F
+    F["6. Judge<br/>Jev answers the questions below<br/>and digs for more evidence (up to 3 times)"] --> G
+    G["7. Score<br/>Python adds up the points"] --> H
+    H[("Supabase")] --> I["Dashboard<br/>Next.js on Vercel, read-only"]
+```
 
-The website (Next.js on Vercel) only reads the database. It never runs the pipeline or calls a model.
+- If Claude or Jev is out of funds, the run stops at step 1 and saves nothing.
+- Each article is paid for once, and about half never reach Claude (step 3).
+- The dashboard only reads the database. It never runs the pipeline or calls a model.
 
-## What Jev decides
+## How Jev is used
 
-Jev makes every judgment call. It answers three kinds of question: **Noul** (yes/no, returned as the probability of yes), **Choice** (pick one label) and **Score** (a position on a 0–4 rubric).
+Jev makes every judgment call. Claude only reads articles; Python only does
+rules and math. Jev answers three kinds of question: **yes/no** (Noul),
+**pick a label** (Choice) and **a 0–4 rating** (Score), each with a confidence.
 
-| Jev decides | Type | What happens |
+| When | Jev answers | What happens |
 |---|---|---|
-| Before Claude: is this headline a new pre-seed–Series B raise? | Noul | Confident "no" (0.8+) → never sent to Claude |
-| Is this article announcing a **new** round? | Noul | Confident "no" → rejected |
-| Is it a real company raising money? A tech startup? | Noul | Confident "no" → rejected |
-| Sells to B2B, B2C, both, or unclear? | Choice | Confident B2C → hidden |
-| Which round? | Choice | Seed–Series B → +15. "Later" over $200M → hidden |
-| How well does it fit the ideal customer (B2B, Seed–B, building sales)? | Score | 0–20 points |
-| For each sales-looking job: is it direct sales (AE, SDR, sales leader)? | Noul + Choice | Any yes → +15 |
-| Are the founders technical? (yes / no / unknown) | Choice | Yes → +10 |
-| Is this their first sales hire? (yes / no / unknown) | Choice | Yes → +30, if a sales role is open |
-| Enough evidence, or dig further? | Choice | Check careers, news or about page (up to 3 rounds) |
+| Before Claude | Is this headline a new pre-seed–Series B raise? | 80%+ sure it isn't → Claude never reads it |
+| After Claude | Is this a **new** round, not an old one? | Sure it isn't → rejected |
+| Each company | Real company raising money? A tech startup? | Sure it isn't → rejected |
+| Each company | Sells to businesses, consumers, both? | Sure it's consumers → hidden |
+| Each company | Which round? | Seed–Series B → +15 points |
+| Each company | How well does it fit: B2B, Seed–B, building sales? (0–4) | Up to +20 points |
+| Each sales-looking job | Is it a real sales role (AE, SDR, sales leader)? | Any → +15 points |
+| About page | Are the founders technical? | Yes → +10 points |
+| About page | Is this their first sales hire? | Yes, with a sales role open → +30 points |
+| Investigation | Enough evidence, or check careers / news / about page? | Gathers it and asks the company questions again |
 
-- **Confidence:** answers under 0.7 are flagged "needs review" (0.4 for ICP fit, 0.5 for sells-to). The +30 and +10 scale down below 0.7. "Unknown" scores nothing.
-- **Not Jev's job:** Claude only reads articles. Python handles websites, dates, duplicates and all the points.
-
-Full details: [Jev in detail](docs/how-it-works.md#jev-in-detail).
+- **"Sure"** means 70%+ confidence. Less sure answers are kept and flagged
+  "needs review" on the dashboard (the bar is 40% for fit and 50% for who it
+  sells to, since those have more possible answers).
+- First sales hire and technical founders earn fewer points below 70% confidence.
+- An "unknown" answer (the page doesn't say) earns nothing and isn't flagged.
 
 ## Scoring (max 120)
 
-Recency 0–30 · Seed–Series B +15 · Open sales role +15 · First sales hire +30 · Technical founders +10 · ICP fit 0–20
+Recency 0–30 · Seed–Series B +15 · Open sales role +15 · First sales hire +30 ·
+Technical founders +10 · Fit 0–20
 
-Hidden, but kept in the database: confident B2C, "Later" rounds over $200M, articles that aren't a new round, non-startups, and raises older than 90 days.
+Hidden but kept in the database: consumer companies, late rounds over $200M,
+articles that aren't a new round, non-startups, and raises older than 90 days.
 
 ## Running it
 
-- **Pipeline:** GitHub Actions ([`daily.yml`](.github/workflows/daily.yml)). Secrets: `ANTHROPIC_API_KEY`, `TYPESAFE_API_KEY`, `DATABASE_URL` (use Supabase's **Session pooler** URL; GitHub can't reach the direct one).
-- **Dashboard:** Vercel, root directory `dashboard/`, with `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
-
-More: [how it works](docs/how-it-works.md) · [operations, testing and limits](docs/operations.md)
+- **Daily pipeline:** [`daily.yml`](.github/workflows/daily.yml). Run it now
+  from the Actions tab ("Run workflow") or with `gh workflow run daily.yml`.
+  Secrets: `ANTHROPIC_API_KEY`, `TYPESAFE_API_KEY`, `DATABASE_URL` (Supabase's
+  **Session pooler** URL; GitHub can't reach the direct one).
+- **Locally**, from `pipeline/` with the same keys in `.env`:
+  `python -m src.main run` (everything, saves) or `discover` / `score` (preview,
+  saves nothing).
+- **Dashboard:** Vercel, root directory `dashboard/`, with `SUPABASE_URL` and
+  `SUPABASE_ANON_KEY`.
+- **Tests:** `python -m unittest discover -s tests` in `pipeline/`; `npm test`
+  in `dashboard/`.
