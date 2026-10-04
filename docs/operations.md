@@ -24,8 +24,8 @@ For an overview, see the [README](../README.md).
 - **`cleanup` is not a preview.** It calls models and changes stored data.
   Diagnostic commands (`discover`, `jobs`, `judge`, `score`) don't write to the
   database but can still cost API usage.
-- **`--mock-models`** stubs extraction and judgments. It's rejected for `run` and
-  `cleanup`, and doesn't stop database reads or job-board requests.
+- **`--mock-models`** stubs extraction and judgments. It's rejected for `run`,
+  `cleanup` and `rescore`, and doesn't stop database reads or job-board requests.
 - **`run_pipeline` and `python -m src.main`** are the same entry point.
 - **`rescore [--dry-run]`** re-asks the founder questions for every scored
   company, replaces the old answers, re-applies the review thresholds to stored
@@ -35,7 +35,8 @@ For an overview, see the [README](../README.md).
   regenerate `requirements.txt` with the command at the top of that file.
   Install with `pip install --require-hashes -r requirements.txt`.
 - **Migrations** live in `pipeline/migrations/` and all run, in order, on
-  `migrate`, `run` and `cleanup`. Each file must be safe to re-run.
+  `migrate`, `run`, `cleanup` and `rescore` (not `--dry-run`). Each file must be
+  safe to re-run.
 - **Dashboard env vars** (`SUPABASE_URL`, `SUPABASE_ANON_KEY`) are server-only —
   no `NEXT_PUBLIC_` prefix. The dashboard needs no model keys.
 - **No auth.** The schema grants anonymous read access; there's no sign-in.
@@ -175,9 +176,9 @@ Protected Vercel previews may need authentication.
   without the view's filters; the dashboard shows each company's latest score
   with filters. The UI labels unknown rounds as `Later`.
 - **Scores can reach 120**, but the score bar caps at 100.
-- **Heartbeat starts after the first run with this code.** Until then, the
-  header falls back to the latest signal timestamp. After it, "Updated" means
-  the last successful run, and it turns amber ("pipeline may be stalled") after
-  36 hours.
+- **"Updated" means the last successful run** (`pipeline_status`), and turns
+  amber ("pipeline may be stalled") after 36 hours. A run that stops out of
+  funds doesn't count, so a few missed days show up there. Without a heartbeat
+  the header falls back to the newest signal's time.
 - **The [freshness audit](../pipeline/reports/freshness_audit.json)** is a dated
   snapshot, not a live count.

@@ -22,7 +22,7 @@ flowchart TD
     Schedule["GitHub Actions: daily at 13:00 UTC<br/>or manual Python CLI"]
 
     subgraph Pipeline["Python pipeline"]
-        Prepare["Apply migration and age-out rules"]
+        Prepare["Check the Claude and Jev accounts<br/>Apply migrations and age-out rules"]
         Sources["TechCrunch RSS / Google News RSS<br/>Filter publication dates"]
         Fetch["Fetch article text<br/>Recheck original publication date"]
         Prefilter["Python: one article per raise, skip known companies<br/>Jev: skip clear non-early-stage raises"]
@@ -105,7 +105,8 @@ Code: [extraction](../pipeline/src/extract.py) ·
   and the article's opening (the prefilter).
 - Jev `Noul` answers become yes/no plus confidence; `Choice` gives categories;
   `Score` gives the ICP position. Anything below **0.7** confidence (**0.4**
-  for ICP fit) is flagged `needs_review`; "unknown" answers are never flagged.
+  for ICP fit, **0.5** for "sells to") is flagged `needs_review`; "unknown"
+  answers are never flagged.
 - **Jev judges, always.** A missing `TYPESAFE_API_KEY` or a Jev that won't
   start stops the run; it never falls back to Claude on its own. A one-call
   preflight checks the judge before extraction spends anything. Set
@@ -311,8 +312,9 @@ Additive points, max **120**. Values are in `SCORING_WEIGHTS` in
 - Sort order: score ↓, raise age ↑, average signal confidence ↓.
 - **Excluded from ranking** (but kept): B2C with ≥ 0.7 confidence, and `later`
   rounds with more than **$200M** raised.
-- Low-confidence findings stay visible for review; confidence doesn't reduce
-  points.
+- Low-confidence findings stay visible for review. Confidence only reduces
+  points for first sales hire and technical founders, which scale down below
+  0.7 (see [Jev in detail](#jev-in-detail)); every other rule pays in full.
 
 ---
 
