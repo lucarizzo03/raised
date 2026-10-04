@@ -91,7 +91,10 @@ Code: [extraction](../pipeline/src/extract.py) ·
 ### Model behavior
 
 - **Extraction** uses a forced `return_json` tool call with the Pydantic
-  `FundingExtraction` schema, then validates it.
+  `FundingExtraction` schema, then validates it. Haiku sometimes names late
+  rounds (`series_c`, `Series D`, `growth`) instead of using `later`; these are
+  read as `later`, and any other unrecognized label as `unknown`, so the
+  article isn't thrown away.
 - Article text is capped at **12,000 characters**. Only the round newly
   announced in the article is extracted. A missing announcement date falls back
   to the article's publication date — never today's date.
