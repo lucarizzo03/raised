@@ -23,9 +23,9 @@ flowchart TD
 
     subgraph Pipeline["Python pipeline"]
         Prepare["Apply migration and age-out rules"]
-        Sources["TechCrunch RSS / Google News RSS / SEC EDGAR<br/>Filter publication and filing dates"]
+        Sources["TechCrunch RSS / Google News RSS<br/>Filter publication dates"]
         Fetch["Fetch article text<br/>Recheck original publication date"]
-        Extract["Claude Sonnet 4.5<br/>Extract a newly announced funding round"]
+        Extract["Claude Haiku 4.5<br/>Extract a newly announced funding round"]
         Identity["Python<br/>Verify domain and deduplicate"]
         Gate["Jev: is this a new round?<br/>Python: date and evidence checks"]
         Enrich["Public job boards, company pages and news"]
@@ -69,7 +69,7 @@ The diagram shows a full `run`. Diagnostic commands stop at earlier stages.
 
 ## Models
 
-The default Anthropic model is **Claude Sonnet 4.5** (`claude-sonnet-4-5`).
+The default Anthropic model is **Claude Haiku 4.5** (`claude-haiku-4-5`).
 Judgments use **TypeSafe Jev** via `TypeSafeClassifier()`, with the installed
 SDK's default service configuration (no separate Jev version is pinned).
 
@@ -91,7 +91,10 @@ Code: [extraction](../pipeline/src/extract.py) ·
 ### Model behavior
 
 - **Extraction** uses a forced `return_json` tool call with the Pydantic
-  `FundingExtraction` schema, then validates it.
+  `FundingExtraction` schema, then validates it. Haiku sometimes names late
+  rounds (`series_c`, `Series D`, `growth`) instead of using `later`; these are
+  read as `later`, and any other unrecognized label as `unknown`, so the
+  article isn't thrown away.
 - Article text is capped at **12,000 characters**. Only the round newly
   announced in the article is extracted. A missing announcement date falls back
   to the article's publication date — never today's date.
@@ -211,8 +214,8 @@ counts as ideal, edit the question in `pipeline/src/judge.py`.
    (out of funds or a bad key stops the run here, before any database write),
    then apply migrations/settings and age out old companies.
 2. **Discover** — TechCrunch venture/startups RSS; Google News for
-   `raises Seed`, `raises Series A`, `raises Series B`; SEC EDGAR Form D
-   full-text search. Dates are filtered before fetching. Google News redirect
+   `raises Seed`, `raises Series A`, `raises Series B`. Dates are filtered
+   before fetching. Google News redirect
    URLs are decoded with `googlenewsdecoder`. Articles already processed on an
    earlier run (see `processed_articles`) are skipped before fetching, so each
    article is paid for once rather than on every day of the 3-day lookback.
@@ -247,8 +250,7 @@ Defined in [`pipeline/src/config.py`](../pipeline/src/config.py).
 
 - RSS uses UTC `pubDate`. Missing, out-of-window and future dates are skipped;
   `updated` is never used in its place.
-- Google searches use `when:3d` (or `when:30d` for backfill). EDGAR gets the
-  matching filing-date range.
+- Google searches use `when:3d` (or `when:30d` for backfill).
 - Per-source counts (fetched, too old, missing date, kept) are logged.
 
 ---

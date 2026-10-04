@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- LLM (extraction + judge fallback): Anthropic only -------------------------
-ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5")
 
 # --- Judge backend -------------------------------------------------------------
 # Jev judges, by design. "llm" (Claude with JSON output) is an explicit opt-in
@@ -55,13 +55,6 @@ GOOGLE_NEWS_RSS = (
     "https://news.google.com/rss/search?q={query}%20when%3A{window_days}d"
     "&hl=en-US&gl=US&ceid=US:en"
 )
-
-EDGAR_FULL_TEXT_SEARCH = "https://efts.sec.gov/LATEST/search-index"
-EDGAR_FORMS = "D"
-# SEC requires a declared user agent with contact info. GitHub passes an unset
-# repository variable as "", and SEC refuses a blank user agent (403), so an
-# empty value falls back to the default too.
-EDGAR_USER_AGENT = os.environ.get("EDGAR_USER_AGENT") or "raised-pipeline/0.1 (contact@example.com)"
 
 # --- Fetching -------------------------------------------------------------------
 HTTP_TIMEOUT = 20.0

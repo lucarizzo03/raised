@@ -64,7 +64,6 @@ For an overview, see the [README](../README.md).
 | Secret | `ANTHROPIC_API_KEY` |
 | Secret | `TYPESAFE_API_KEY` |
 | Secret | `DATABASE_URL` (Supabase **Session pooler** URL; the direct host is IPv6-only and unreachable from GitHub) |
-| Variable | `EDGAR_USER_AGENT` (optional: app name + contact email for the SEC; a generic one is used if unset) |
 | Variable | `JUDGE_BACKEND` (optional; defaults to `jev`, set `llm` only to judge with Claude on purpose) |
 
 - The job installs hash-pinned dependencies, runs unit tests, then
@@ -161,8 +160,10 @@ Protected Vercel previews may need authentication.
 - **Known companies aren't refreshed daily.** Deduped companies (including
   excluded ones) are skipped, so their hiring signals and recency points aren't
   recomputed. Date-based hiding and age-out still apply.
-- **Source coverage is limited.** RSS feeds are short, EDGAR reads one results
-  page, and some publishers block fetching.
+- **Source coverage is limited.** Only TechCrunch and Google News are read;
+  RSS feeds are short and some publishers block fetching. SEC Form D filings
+  were removed: the downloads were blocked (403) and most filings were
+  investment funds, not startups.
 - **Judgments aren't verified facts.** Job-board slug matching and first-hire
   detection are heuristics — check sources before outreach.
 - **CLI and dashboard rankings differ.** `ranked` shows the newest score batch

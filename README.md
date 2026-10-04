@@ -12,8 +12,8 @@ them for outreach.
 Every day at 13:00 UTC, GitHub Actions runs the pipeline:
 
 1. **Check:** make sure the Claude and Jev accounts work. If either is out of funds, stop and save nothing.
-2. **Discover:** pull new articles from TechCrunch, Google News and SEC filings (last 3 days; each article is read only once).
-3. **Extract:** Claude Sonnet 4.5 pulls out the company, round, amount and date.
+2. **Discover:** pull new articles from TechCrunch and Google News (last 3 days; each article is read only once).
+3. **Extract:** Claude Haiku 4.5 pulls out the company, round, amount and date.
 4. **Verify:** Python confirms the company's website and drops duplicates and stale rounds.
 5. **Judge:** Jev answers the questions below.
 6. **Score & save:** Python adds up the points and saves everything to Supabase.

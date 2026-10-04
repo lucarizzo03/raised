@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Round(str, Enum):
@@ -25,12 +26,12 @@ class SalesRoleType(str, Enum):
 
 
 class FeedItem(BaseModel):
-    """A raw article/filing pulled from a feed, with fetched body text."""
+    """A raw article pulled from a feed, with fetched body text."""
 
     title: str
     url: str
     published: date | None = None
-    source: str  # techcrunch | google_news | sec_edgar
+    source: str  # techcrunch | google_news
     text: str = ""
     html: str = ""  # kept so domain links can be harvested from the body
 
@@ -46,6 +47,21 @@ class FundingExtraction(BaseModel):
     raised_date: date | None = None
     investors: list[str] = Field(default_factory=list)
     announcement_evidence: str = ""
+
+    @field_validator("round", mode="before")
+    @classmethod
+    def _normalize_round(cls, value):
+        """Haiku names late rounds ("series_c", "Series D") instead of using
+        "later", which used to fail the whole extraction. Any label outside
+        the enum becomes "unknown" rather than dropping the article."""
+        if not isinstance(value, str):
+            return value
+        label = re.sub(r"[\s-]+", "_", value.strip().lower())
+        if label == "preseed":
+            return Round.PRE_SEED
+        if re.fullmatch(r"series_[c-z](\d+)?|growth|late_stage|pre_ipo", label):
+            return Round.LATER
+        return label if label in {r.value for r in Round} else Round.UNKNOWN
 
 
 class JobPosting(BaseModel):
