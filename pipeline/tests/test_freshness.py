@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 from urllib.parse import unquote
 
 from src import config, dates, extract, feeds, judge
-from src.models import Company, FeedItem, Signal
+from src.models import Company, FeedItem, Round, Signal
 
 
 class FreshnessTests(unittest.TestCase):
@@ -91,18 +91,6 @@ class FeedTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(items), 1)
         self.assertTrue(all(f"when:{config.BACKFILL_WINDOW_DAYS}d" in unquote(call.args[0]) for call in parse.call_args_list))
 
-    async def test_edgar_range(self):
-        client = AsyncMock()
-        response = SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"hits": {"hits": []}})
-        client.get.return_value = response
-        with patch.object(feeds, "now_utc", return_value=self.now), patch.object(feeds.httpx, "AsyncClient") as factory:
-            factory.return_value.__aenter__.return_value = client
-            await feeds.fetch_edgar()
-        params = client.get.call_args.kwargs["params"]
-        self.assertEqual(params["startdt"], (self.now.date() - timedelta(days=config.INGEST_WINDOW_DAYS)).isoformat())
-        self.assertEqual(params["enddt"], self.now.date().isoformat())
-
-
 class ExtractionTests(unittest.IsolatedAsyncioTestCase):
     async def test_recent_feed_cannot_refresh_an_old_article(self):
         item = FeedItem(title="Plaid Series A", url="https://example.com/old", published=date(2026, 9, 22), source="google_news")
@@ -120,6 +108,15 @@ class ExtractionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.raised_date, item.published)
         self.assertIn(item.published.isoformat(), complete.call_args.args[1])
         self.assertIn("background", complete.call_args.args[0])
+
+    async def test_late_round_labels_become_later(self):
+        item = FeedItem(title="Acme raises Series C", url="", published=date(2026, 9, 22), source="techcrunch", text="Acme raised a Series C.")
+        cases = {"series_c": Round.LATER, "Series D": Round.LATER, "series-g": Round.LATER,
+                 "growth": Round.LATER, "Series A": Round.SERIES_A, "preseed": Round.PRE_SEED, "bridge": Round.UNKNOWN}
+        for label, expected in cases.items():
+            with self.subTest(label=label), patch.object(extract.llm, "complete_json", new_callable=AsyncMock, return_value={"company_name": "Acme", "round": label}):
+                result = await extract.extract_one(item)
+                self.assertEqual(result.round, expected)
 
     async def test_stated_announcement_date_is_preserved(self):
         item = FeedItem(title="Acme raises", url="", published=date(2026, 9, 22), source="techcrunch", text="Acme announced the round on September 20.")

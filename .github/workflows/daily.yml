@@ -42,7 +42,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          EDGAR_USER_AGENT: ${{ vars.EDGAR_USER_AGENT }}
           # Jev judges; set the repo variable to "llm" only to use Claude on purpose.
           JUDGE_BACKEND: ${{ vars.JUDGE_BACKEND || 'jev' }}
         run: python -m src.main run -v

@@ -16,7 +16,7 @@ from .resilience import run_each
 
 log = logging.getLogger(__name__)
 
-SYSTEM = """You extract funding events from news articles and SEC filings.
+SYSTEM = """You extract funding events from news articles.
 Given the article text, return JSON:
 {
   "not_funding_article": false,
@@ -41,9 +41,7 @@ Rules:
 - domain should be the company's real website, not the publisher's.
 - raised_date is the round's announcement date if stated, in ISO format.
   If unstated, use the supplied article publication date. If neither date
-  is available, return null. Never use a page update date or today's date.
-- If the article is an SEC Form D filing, company_name is the entity name;
-  domain is usually absent (leave null); use the filing date as raised_date."""
+  is available, return null. Never use a page update date or today's date."""
 
 
 async def extract_one(item: FeedItem) -> FundingExtraction | None:
