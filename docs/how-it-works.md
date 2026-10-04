@@ -101,7 +101,8 @@ Code: [extraction](../pipeline/src/extract.py) ·
   announced in the article is extracted. A missing announcement date falls back
   to the article's publication date — never today's date.
 - **Jev** receives extracted fields plus short job, about/careers and news
-  excerpts — not the full article.
+  excerpts — not the full article. Before extraction it sees only a headline
+  and the article's opening (the prefilter).
 - Jev `Noul` answers become yes/no plus confidence; `Choice` gives categories;
   `Score` gives the ICP position. Anything below **0.7** confidence (**0.4**
   for ICP fit) is flagged `needs_review`; "unknown" answers are never flagged.
@@ -161,7 +162,8 @@ questions about a piece of text. Raised uses all three types:
   each run, a one-question Noul checks that Jev is reachable and paid up.
 - **What Jev sees** is short text Raised assembles: the extracted funding facts,
   plus job descriptions, about/careers page excerpts or news headlines as
-  relevant. Never the full article.
+  relevant. The prefilter (#0) sees a headline and the article's first 600
+  characters. Never the full article.
 
 **Jev can do more that Raised doesn't use yet:**
 - The **per-label and per-level probabilities** from Choice and Score (for

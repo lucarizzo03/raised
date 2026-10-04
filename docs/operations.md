@@ -164,6 +164,11 @@ Protected Vercel previews may need authentication.
   RSS feeds are short and some publishers block fetching. SEC Form D filings
   were removed: the downloads were blocked (403) and most filings were
   investment funds, not startups.
+- **The prefilter's grouping is a heuristic.** It reads the company name from
+  headlines shaped like "Name raises …". A missed match only costs an extra
+  Claude call (the later dedupe still catches it); two different companies with
+  the same name in the same 3 days would be merged. Review Jev's skips with
+  `select url, detail from processed_articles where outcome = 'prefilter_skipped'`.
 - **Judgments aren't verified facts.** Job-board slug matching and first-hire
   detection are heuristics — check sources before outreach.
 - **CLI and dashboard rankings differ.** `ranked` shows the newest score batch
