@@ -70,6 +70,7 @@ class ProcessedArticleTests(unittest.IsolatedAsyncioTestCase):
         outcomes = {}
         with patch.object(extract.llm, "complete_json", complete_json), \
              patch.object(extract, "now_utc", return_value=SimpleNamespace(date=lambda: TODAY)), \
+             patch.object(extract.prefilter, "screen", AsyncMock(return_value={})), \
              patch.object(extract, "_fill_text", AsyncMock()), \
              patch.object(extract.domains, "pick_domain", return_value=(None, "none")):
             await extract.extract_companies(items + [unfetched], outcomes=outcomes)

@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from pydantic import ValidationError
 
-from . import config, domains, llm
+from . import config, domains, llm, prefilter
 from .dates import article_publication_date, now_utc
 from .fetch import Fetcher, normalize_name, normalize_url
 from .models import Company, FeedItem, FundingExtraction, Signal
@@ -70,13 +70,14 @@ async def extract_one(item: FeedItem) -> FundingExtraction | None:
 async def extract_companies(
     items: list[FeedItem],
     window_days: int = config.INGEST_WINDOW_DAYS,
-    outcomes: dict[str, str] | None = None,
+    outcomes: dict[str, str | tuple[str, str]] | None = None,
+    known_names: set[str] = frozenset(),
 ) -> list[Company]:
-    """Fetch article bodies, extract, resolve + verify domains, dedupe.
+    """Fetch article bodies, prefilter, extract, resolve + verify domains, dedupe.
 
-    `outcomes` collects {normalized url: outcome} for every article whose
-    result is final. Fetch and extraction failures are left out so they are
-    retried next run.
+    `outcomes` collects {normalized url: outcome or (outcome, detail)} for
+    every article whose result is final. Fetch and extraction failures are
+    left out so they are retried next run, along with their duplicates.
     """
     outcomes = {} if outcomes is None else outcomes
     fetcher = Fetcher()
@@ -93,6 +94,19 @@ async def extract_companies(
             if item.text and id(item) not in recent_ids:
                 outcomes[normalize_url(item.url)] = "out_of_window"
         items = recent
+
+        # One article per raise, and only the ones Jev thinks could be a new
+        # early-stage round, go on to Claude.
+        reps, dupes, known_items = prefilter.group(items, known_names)
+        for item in known_items:
+            outcomes[normalize_url(item.url)] = "known_company"
+        skipped = await prefilter.screen([i for i in reps if i.text])
+        for rep in reps:
+            if id(rep) in skipped:
+                for item in [rep, *dupes.get(id(rep), [])]:
+                    outcomes[normalize_url(item.url)] = ("prefilter_skipped", f"jev confidence {skipped[id(rep)]:.2f}")
+        items = [r for r in reps if id(r) not in skipped]
+
         # Model concurrency is capped inside llm; a failed article is skipped
         # unless so many fail that the provider must be down.
         extractions, failed = await run_each(items, extract_one, stage="extract", label=lambda i: i.url)
@@ -104,6 +118,8 @@ async def extract_companies(
                 outcomes[normalize_url(item.url)] = "invalid_extraction"
             elif ext.not_funding_article or not ext.company_name:
                 outcomes[normalize_url(item.url)] = "not_funding"
+            for dupe in dupes.get(id(item), []):
+                outcomes[normalize_url(dupe.url)] = "duplicate"
 
         # Resolve a domain from the article itself. Never from the name.
         pending: list[tuple[FeedItem, FundingExtraction, str | None, str]] = []

@@ -213,7 +213,7 @@ def persist_run(
     *,
     backfill: bool = False,
     write_scores: bool = True,
-    processed_articles: dict[str, str] | None = None,
+    processed_articles: dict[str, str | tuple[str, str]] | None = None,
 ) -> dict:
     """Everything in one transaction: an aborted run marks no article processed."""
     added = rejected = 0
@@ -279,8 +279,8 @@ def persist_run(
         if processed_articles:
             with conn.cursor() as cur:
                 cur.executemany(
-                    "insert into processed_articles (url, outcome) values (%s, %s) on conflict (url) do nothing",
-                    list(processed_articles.items()),
+                    "insert into processed_articles (url, outcome, detail) values (%s, %s, %s) on conflict (url) do nothing",
+                    [(url, *(v if isinstance(v, tuple) else (v, None))) for url, v in processed_articles.items()],
                 )
         conn.execute(
             "delete from processed_articles where first_seen < now() - make_interval(days => %s)",

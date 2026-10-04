@@ -13,10 +13,11 @@ Every day at 13:00 UTC, GitHub Actions runs the pipeline:
 
 1. **Check:** make sure the Claude and Jev accounts work. If either is out of funds, stop and save nothing.
 2. **Discover:** pull new articles from TechCrunch and Google News (last 3 days; each article is read only once).
-3. **Extract:** Claude Haiku 4.5 pulls out the company, round, amount and date.
-4. **Verify:** Python confirms the company's website and drops duplicates and stale rounds.
-5. **Judge:** Jev answers the questions below.
-6. **Score & save:** Python adds up the points and saves everything to Supabase.
+3. **Filter:** Python keeps one article per raise (the same raise is often covered by 5+ outlets) and skips companies already stored. Jev then skips articles it is confident aren't a new pre-seed–Series B raise. About half the articles never reach Claude.
+4. **Extract:** Claude Haiku 4.5 pulls out the company, round, amount and date.
+5. **Verify:** Python confirms the company's website and drops duplicates and stale rounds.
+6. **Judge:** Jev answers the questions below.
+7. **Score & save:** Python adds up the points and saves everything to Supabase.
 
 The website (Next.js on Vercel) only reads the database. It never runs the pipeline or calls a model.
 
@@ -26,6 +27,7 @@ Jev makes every judgment call. It answers three kinds of question: **Noul** (yes
 
 | Jev decides | Type | What happens |
 |---|---|---|
+| Before Claude: is this headline a new pre-seed–Series B raise? | Noul | Confident "no" (0.8+) → never sent to Claude |
 | Is this article announcing a **new** round? | Noul | Confident "no" → rejected |
 | Is it a real company raising money? A tech startup? | Noul | Confident "no" → rejected |
 | Sells to B2B, B2C, both, or unclear? | Choice | Confident B2C → hidden |
