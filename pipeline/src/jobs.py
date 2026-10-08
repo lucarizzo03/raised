@@ -3,7 +3,6 @@ Greenhouse, Lever public JSON APIs, take the first that responds."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 
@@ -142,13 +141,3 @@ async def fetch_jobs(company: Company, fetcher: Fetcher) -> list[JobPosting]:
                 log.info("%s: %d jobs on %s (slug=%s)", company.name, len(jobs), board.__name__, slug)
                 return jobs
     return []
-
-
-async def fetch_all_jobs(companies: list[Company]) -> None:
-    fetcher = Fetcher()
-    try:
-        results = await asyncio.gather(*(fetch_jobs(c, fetcher) for c in companies))
-    finally:
-        await fetcher.close()
-    for company, jobs in zip(companies, results, strict=True):
-        company.jobs = jobs

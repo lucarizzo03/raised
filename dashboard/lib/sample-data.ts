@@ -31,10 +31,6 @@ export const sampleCompanies: Company[] = [
       { id: "b-2", label: "Hiring: Account Executive", needsReview: false },
       { id: "b-3", label: "B2B", needsReview: false },
     ],
-    decisions: [
-      { round: 1, question: "score now or dig deeper?", answer: "check_careers", confidence: 0.81, actionChosen: "check_careers" },
-      { round: 2, question: "score now or dig deeper?", answer: "score_now", confidence: 0.9, actionChosen: null },
-    ],
     draftEmail: "Hi there,\n\nCongrats on the seed round.\n\nBest,\nJoe",
   },
 ];

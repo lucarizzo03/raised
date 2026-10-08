@@ -1,9 +1,9 @@
 """Pipeline CLI.
 
   python -m src.main discover   # feeds -> fetch -> extract -> dedupe (prints list)
-  python -m src.main jobs       # + job boards (prints open roles)
+  python -m src.main jobs       # + job boards and about pages (prints open roles)
   python -m src.main judge      # + Jev judgments (prints signals w/ confidence)
-  python -m src.main score      # + investigation loop + scoring (prints ranking)
+  python -m src.main score      # + scoring (prints ranking)
   python -m src.main run        # everything + persist to Postgres
   python -m src.main ranked     # print latest ranking from the DB
 
@@ -151,7 +151,7 @@ async def _rescore(today: date, dry_run: bool) -> None:
     """Re-judge every scored company's jobs and founders under the current
     rules and recompute its score. Job boards and about pages are fetched
     again; a board that returns nothing keeps its stored job answers."""
-    from . import investigate, judge, score
+    from . import enrich, judge, score
     from . import jobs as jobs_mod
     from .fetch import Fetcher
 
@@ -168,7 +168,7 @@ async def _rescore(today: date, dry_run: bool) -> None:
             c.signals = [s for s in c.signals if s.signal_type not in db.JOB_SIGNALS]
             await asyncio.gather(*(judge.judge_job(c, j) for j in jobs_mod.sales_candidates(found)))
             rejudged_jobs.add(c.id)
-        await investigate._fetch_about(c, fetcher)
+        await enrich.fetch_about(c, fetcher)
         await judge.judge_founders(c)  # after jobs: it sees the current open sales roles
 
     try:
@@ -253,7 +253,7 @@ async def main(argv: list[str] | None = None) -> None:
             print(f"{i:3d}. {r['score']:3d}  {r['name']:30s} {r['explanation']}")
         return
 
-    from . import investigate, jobs as jobs_mod, judge, score
+    from . import enrich, judge, score
 
     window_days = config.BACKFILL_WINDOW_DAYS if args.backfill else config.INGEST_WINDOW_DAYS
     log.info("pipeline mode=%s window_days=%d", "backfill" if args.backfill else "daily", window_days)
@@ -266,33 +266,19 @@ async def main(argv: list[str] | None = None) -> None:
         return
 
     eligible = await _screen(companies, args.mock_models)
-    await jobs_mod.fetch_all_jobs(eligible)
+    await enrich.enrich_all(eligible)
     if args.command == "jobs":
         _print_jobs(eligible)
         return
 
     if not args.mock_models:
         await judge.judge_all(eligible)
-    # Gate rejections are persisted with the rest but never investigated or scored.
+    # Gate rejections are persisted with the rest but never scored.
     eligible = [c for c in eligible if not c.rejection_reason]
     if args.command == "judge":
-        # Fetch about pages so founder/first-hire judgments print too.
-        if not args.mock_models:
-            from .fetch import Fetcher
-
-            fetcher = Fetcher()
-            try:
-                await asyncio.gather(
-                    *(investigate._fetch_about(c, fetcher) for c in eligible)
-                )
-            finally:
-                await fetcher.close()
-            await asyncio.gather(*(judge.judge_founders(c) for c in eligible))
         _print_signals(companies)
         return
 
-    if not args.mock_models:
-        await investigate.investigate_all(eligible)
     # A company that failed a stage is retried next run, so its article must
     # not be marked processed.
     from .fetch import normalize_url

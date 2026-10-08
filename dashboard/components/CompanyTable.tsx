@@ -9,12 +9,6 @@ import CompanyLogo from "./CompanyLogo";
 
 const ROUNDS: Round[] = ["Pre-seed", "Seed", "Series A", "Series B", "Later"];
 
-const ACTION_LABELS: Record<string, string> = {
-  check_careers: "checked careers page",
-  search_news: "searched news",
-  fetch_about: "fetched about page",
-};
-
 // Matches the disclosure transition below; the exiting row unmounts once the
 // collapse has finished playing.
 const COLLAPSE_MS = 320;
@@ -459,23 +453,7 @@ function ExpandedRow({ company }: { company: Company }) {
       </div>
 
       <div className="min-w-0">
-        <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
-          Investigation
-        </h3>
-        {company.decisions.length === 0 ? (
-          <p className="text-sm text-text-secondary">Scored on first pass</p>
-        ) : (
-          <ol className="space-y-1.5 text-sm text-text">
-            {company.decisions.map((d) => (
-              <li key={d.round}>
-                Round {d.round} - {d.question} {d.answer} ({d.confidence.toFixed(2)}) -&gt;{" "}
-                {d.actionChosen ? ACTION_LABELS[d.actionChosen] ?? d.actionChosen : "scored"}
-              </li>
-            ))}
-          </ol>
-        )}
-
-        <div className="mt-5 overflow-hidden rounded-md border border-border bg-surface shadow-sm">
+        <div className="overflow-hidden rounded-md border border-border bg-surface shadow-sm">
           <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border px-4 py-2">
             <h3 className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
               Draft email

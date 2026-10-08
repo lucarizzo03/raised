@@ -1,8 +1,6 @@
 import type {
   Badge,
   Company,
-  Decision,
-  DecisionRow,
   RankedCompanyRow,
   Round,
   Signal,
@@ -96,8 +94,8 @@ const JOB_SIGNALS = new Set(["sales_role", "sales_role_type"]);
 
 /**
  * What the row shows: the current answer to each question, not every answer
- * ever given. The pipeline re-asks company questions while it investigates and
- * keeps each answer; scoring uses the latest, so the dashboard does too. Jobs
+ * ever given. Rescoring re-asks some questions and keeps each answer; scoring
+ * uses the latest, so the dashboard does too. Jobs
  * show one line per actual sales role (the "not sales" answers and the
  * role-type rows are only audit detail). Rows arrive ordered by id, oldest first.
  */
@@ -168,26 +166,13 @@ function draftEmail(name: string, round: Round, roleLabel: string, hook: string)
 
 export function toCompanies(
   rows: RankedCompanyRow[],
-  signalRows: SignalRow[],
-  decisionRows: DecisionRow[]
+  signalRows: SignalRow[]
 ): Company[] {
   const byCompany = new Map<number, SignalRow[]>();
   for (const s of signalRows) {
     const list = byCompany.get(s.company_id);
     if (list) list.push(s);
     else byCompany.set(s.company_id, [s]);
-  }
-  const decisionsBy = new Map<number, Decision[]>();
-  for (const d of decisionRows) {
-    const list = decisionsBy.get(d.company_id) ?? [];
-    list.push({
-      round: d.round,
-      question: d.question,
-      answer: d.answer,
-      confidence: d.confidence,
-      actionChosen: d.action_chosen,
-    });
-    decisionsBy.set(d.company_id, list);
   }
 
   return rows.map((r) => {
@@ -221,7 +206,6 @@ export function toCompanies(
       explanation: r.explanation ?? "",
       signals,
       badges: buildBadges(raw),
-      decisions: decisionsBy.get(r.company_id) ?? [],
       draftEmail: draftEmail(
         r.name,
         round,

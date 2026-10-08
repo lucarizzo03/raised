@@ -26,17 +26,6 @@ export type SignalRow = {
   detected_at: string;
 };
 
-export type DecisionRow = {
-  id: number;
-  company_id: number;
-  question: string;
-  answer: string;
-  confidence: number;
-  action_chosen: string | null;
-  round: number;
-  created_at: string;
-};
-
 // --- Shapes the table renders ------------------------------------------------
 
 export type Round = "Pre-seed" | "Seed" | "Series A" | "Series B" | "Later";
@@ -57,14 +46,6 @@ export type Badge = {
   needsReview: boolean;
 };
 
-export type Decision = {
-  round: number;
-  question: string;
-  answer: string;
-  confidence: number;
-  actionChosen: string | null;
-};
-
 export type Company = {
   id: string;
   name: string;
@@ -79,6 +60,5 @@ export type Company = {
   explanation: string;
   signals: Signal[];
   badges: Badge[];
-  decisions: Decision[];
   draftEmail: string;
 };

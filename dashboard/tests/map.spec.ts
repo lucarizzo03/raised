@@ -12,7 +12,7 @@ const row = (rules: string[]): RankedCompanyRow => ({
 test("reduced low-confidence rules show their confidence and full value", () => {
   const [company] = toCompanies(
     [row(["raise_recency (+28)", "first_sales_hire (+6, confidence 0.14, reduced from 30)", "technical_founders"])],
-    [], []
+    []
   );
   expect(company.rulesFired).toEqual([
     { rule: "Raise recency", points: 28 },
@@ -26,7 +26,7 @@ test("unknown founders read as missing data", () => {
     id: 1, company_id: 1, signal_type: "technical_founders", value: "unknown",
     confidence: 0.9, needs_review: false, source_url: null, detected_at: "2026-09-23",
   };
-  const [company] = toCompanies([row([])], [signal], []);
+  const [company] = toCompanies([row([])], [signal]);
   expect(company.signals[0].label).toBe("Founders: unknown");
   expect(company.badges).toEqual([]);
 });
@@ -41,11 +41,11 @@ test("each question shows only its current answer, and jobs only real sales role
     s("sales_role", "yes (Enterprise Account Executive)", "j1"), s("sales_role_type", "AE (Enterprise Account Executive)", "j1"),
     s("sales_role", "no (GTM Recruiter)", "j2"), s("sales_role_type", "Other (GTM Recruiter)", "j2"),
     s("icp_fit", "2.4", null, 0.6), s("round", "Series A"),
-    s("icp_fit", "2.7", null, 0.8),  // the investigation's final answer
+    s("icp_fit", "2.7", null, 0.8),  // the latest answer
     s("sells_to", "B2B"),
     s("sales_role", "yes (Enterprise Account Executive)", "j3"),  // second posting, same title
   ];
-  const [company] = toCompanies([row([])], rows, []);
+  const [company] = toCompanies([row([])], rows);
   expect(company.signals.map((x) => x.label)).toEqual([
     "New round: yes", "Round: Series A", "Sells to: B2B", "ICP fit: 2.7", "Hiring: Enterprise Account Executive",
   ]);

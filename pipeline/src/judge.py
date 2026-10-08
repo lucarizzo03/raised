@@ -18,7 +18,7 @@ import os
 from dataclasses import dataclass
 
 from . import config, llm
-from .models import Company, Decision, JobPosting, Round, SalesRoleType, Signal
+from .models import Company, JobPosting, Round, SalesRoleType, Signal
 from .resilience import model_slots, run_each, with_retries
 
 log = logging.getLogger(__name__)
@@ -37,9 +37,6 @@ SALES_TYPE_LABELS = {
     "Head of Sales": SalesRoleType.HEAD_OF_SALES,
     "Other": SalesRoleType.OTHER,
 }
-
-INVESTIGATE_ACTIONS = ["score_now", "check_careers", "search_news", "fetch_about"]
-
 
 @dataclass
 class Judgment:
@@ -189,8 +186,9 @@ def _flag(signal_type: str, judgment: Judgment) -> bool:
     return judgment.confidence < threshold
 
 
-def _company_state(company: Company) -> str:
-    """Only extracted/enriched fields - never raw article text."""
+def _company_state(company: Company, *, sales_roles: bool = False) -> str:
+    """Only extracted/enriched fields - never raw article text. `sales_roles`
+    adds the roles Jev already judged to be sales, once jobs are judged."""
     lines = [
         f"company: {company.name}",
         f"domain: {company.domain or 'unknown'}",
@@ -203,12 +201,11 @@ def _company_state(company: Company) -> str:
         f"investors: {', '.join(company.investors) or 'unknown'}",
         f"open roles: {len(company.jobs)}",
     ]
+    if sales_roles:
+        open_roles = _open_sales_roles(company)
+        lines.append(f"open sales roles: {', '.join(open_roles) if open_roles else 'none found'}")
     if company.about_text:
-        lines.append(f"about page excerpt: {company.about_text[:1500]}")
-    if company.careers_text:
-        lines.append(f"careers page excerpt: {company.careers_text[:1000]}")
-    if company.news_snippets:
-        lines.append("recent news: " + " | ".join(company.news_snippets[:5]))
+        lines.append(f"team/about page excerpt: {company.about_text[:2500]}")
     return "\n".join(lines)
 
 
@@ -228,6 +225,9 @@ async def judge_new_round(company: Company) -> None:
 
 
 async def judge_company(company: Company) -> None:
+    """Company questions, plus the founder questions once the about page is
+    fetched - one call. Run after the jobs are judged: first_sales_hire needs
+    the open sales roles."""
     questions = _questions(
         genuine_raise=(
             "noul",
@@ -290,8 +290,9 @@ async def judge_company(company: Company) -> None:
                 ],
             },
         ),
+        **(_founder_questions(company) if company.about_text else {}),
     )
-    answers = await backend().ask(_company_state(company), questions)
+    answers = await backend().ask(_company_state(company, sales_roles=True), questions)
     _record(company, "genuine_raise", answers["genuine_raise"], company.source_url)
     _record(company, "is_startup", answers["is_startup"], company.source_url)
     _record(company, "sells_to", answers["sells_to"], company.source_url)
@@ -299,6 +300,9 @@ async def judge_company(company: Company) -> None:
     if rnd.value in ROUND_LABELS:
         company.round = ROUND_LABELS[rnd.value]
     _record(company, "icp_fit", answers["icp_fit"], company.source_url)
+    if company.about_text:
+        _record(company, "technical_founders", answers["technical_founders"], None)
+        _record(company, "first_sales_hire", answers["first_sales_hire"], None)
 
 
 async def judge_job(company: Company, job: JobPosting) -> None:
@@ -361,26 +365,19 @@ def _open_sales_roles(company: Company) -> list[str]:
     ]
 
 
-async def judge_founders(company: Company) -> None:
-    if not company.about_text:
-        return
-    open_roles = _open_sales_roles(company)
-    state = (
-        f"company: {company.name}\n"
-        f"open sales roles: {', '.join(open_roles) if open_roles else 'none found'}\n"
-        f"team/about page excerpt:\n{company.about_text[:2500]}"
-    )
+def _founder_questions(company: Company) -> dict:
+    """(kind, args) specs for _questions, so they can join another call."""
     # An open sales role is positive evidence about the sales team, so
     # "unknown" is only offered when there is none.
     first_hire_answers = {
         "yes": "No existing sales or go-to-market leadership, so this would be the first sales hire",
         "no": "The company already has a sales team or sales leader",
     }
-    if not open_roles:
+    if not _open_sales_roles(company):
         first_hire_answers["unknown"] = (
             "The text says nothing about the company's sales team, and no sales roles are open"
         )
-    questions = _questions(
+    return dict(
         # Many about pages never name the founders; "unknown" keeps that
         # missing data from turning into a coin-flip yes/no.
         technical_founders=(
@@ -402,46 +399,16 @@ async def judge_founders(company: Company) -> None:
             },
         ),
     )
-    answers = await backend().ask(state, questions)
+
+
+async def judge_founders(company: Company) -> None:
+    """The founder questions on their own, for rescore."""
+    if not company.about_text:
+        return
+    questions = _questions(**_founder_questions(company))
+    answers = await backend().ask(_company_state(company, sales_roles=True), questions)
     _record(company, "technical_founders", answers["technical_founders"], None)
     _record(company, "first_sales_hire", answers["first_sales_hire"], None)
-
-
-async def decide_investigation(company: Company, round_num: int) -> Decision:
-    """Jev picks: score now, or one enrichment action."""
-    available = [a for a in INVESTIGATE_ACTIONS if a != "score_now"]
-    if company.careers_text:
-        available.remove("check_careers")
-    if company.about_text:
-        available.remove("fetch_about")
-    if company.news_snippets:
-        available.remove("search_news")
-    options = ["score_now"] + available
-    questions = _questions(
-        next_action=(
-            "choice",
-            {
-                "instructions": (
-                    "Is the evidence enough to score this company now "
-                    "(score_now), or should we gather one more piece of "
-                    "evidence first?"
-                ),
-                "criteria": {opt: opt.replace("_", " ") for opt in options},
-            },
-        )
-    )
-    answers = await backend().ask(_company_state(company), questions)
-    ans = answers["next_action"]
-    action = ans.value if ans.value in options else "score_now"
-    decision = Decision(
-        question="score now or dig deeper?",
-        answer=action,
-        confidence=ans.confidence,
-        action_chosen=None if action == "score_now" else action,
-        round=round_num,
-    )
-    company.decisions.append(decision)
-    return decision
 
 
 def _record(
@@ -499,16 +466,16 @@ def gate_reason(company: Company) -> str | None:
 async def _judge_company_and_jobs(company: Company) -> None:
     from .jobs import sales_candidates
 
-    await judge_company(company)
     # Non-sales titles only ever produced "no" signals, which nothing scores on.
     candidates = sales_candidates(company.jobs)
     if len(candidates) < len(company.jobs):
         log.info("%s: classifying %d of %d jobs", company.name, len(candidates), len(company.jobs))
     await asyncio.gather(*(judge_job(company, j) for j in candidates))
+    await judge_company(company)  # after the jobs: it sees which sales roles are open
 
 
 async def judge_all(companies: list[Company]) -> None:
-    """Company + job judgments in parallel; founder judgments need about pages.
+    """Jobs, then the company and founder questions, for every company in parallel.
 
     A company whose judgments fail is marked failed_stage and left out of the run.
     """

@@ -17,8 +17,8 @@ flowchart TD
     B["2. Collect<br/>TechCrunch + Google News, last 3 days<br/>skip articles already read"] --> C
     C["3. Filter<br/>Python: one article per raise<br/>Jev: skip what isn't an early-stage raise"] --> D
     D["4. Extract<br/>Claude Haiku reads the article:<br/>company, round, amount, date"] --> E
-    E["5. Verify<br/>Python: website, dates, duplicates"] --> F
-    F["6. Judge<br/>Jev answers the questions below<br/>and digs for more evidence (up to 3 times)"] --> G
+    E["5. Verify<br/>Python: website, dates, duplicates<br/>then fetch job boards and the about page"] --> F
+    F["6. Judge<br/>Jev judges each sales-looking job,<br/>then answers the company questions in one call"] --> G
     G["7. Score<br/>Python adds up the points"] --> H
     H[("Supabase")] --> I["Dashboard<br/>Next.js on Vercel, read-only"]
 ```
@@ -42,9 +42,11 @@ rules and math. Jev answers three kinds of question: **yes/no** (Noul),
 | Each company | Which round? | Seed–Series B → +15 points |
 | Each company | How well does it fit: B2B, Seed–B, building sales? (0–4) | Up to +20 points |
 | Each sales-looking job | Is it a real sales role (AE, SDR, sales leader)? | Any → +15 points |
-| About page | Are the founders technical? | Yes → +10 points |
-| About page | Is this their first sales hire? | Yes, with a sales role open → +30 points |
-| Investigation | Enough evidence, or check careers / news / about page? | Gathers it and asks the company questions again |
+| Each company (about page) | Are the founders technical? | Yes → +10 points |
+| Each company (about page) | Is this their first sales hire? | Yes, with a sales role open → +30 points |
+
+The company questions are asked once, in a single call, after the jobs are
+judged, so first sales hire can see which sales roles are open.
 
 - **"Sure"** means 70%+ confidence. Less sure answers are kept and flagged
   "needs review" on the dashboard (the bar is 40% for fit and 50% for who it
