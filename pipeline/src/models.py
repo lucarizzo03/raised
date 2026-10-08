@@ -82,17 +82,6 @@ class Signal(BaseModel):
     detected_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class Decision(BaseModel):
-    """One entry in the investigation-loop audit trail."""
-
-    question: str
-    answer: str
-    confidence: float
-    action_chosen: str | None = None
-    round: int
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
-
 class Company(BaseModel):
     """A deduped funding event plus everything later stages attach to it."""
 
@@ -115,10 +104,7 @@ class Company(BaseModel):
 
     jobs: list[JobPosting] = Field(default_factory=list)
     signals: list[Signal] = Field(default_factory=list)
-    decisions: list[Decision] = Field(default_factory=list)
     about_text: str = ""
-    careers_text: str = ""
-    news_snippets: list[str] = Field(default_factory=list)
 
     score: int = 0
     rules_fired: list[str] = Field(default_factory=list)

@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { toCompanies } from "./map";
 import { sampleCompanies } from "./sample-data";
-import type { Company, DecisionRow, RankedCompanyRow, SignalRow } from "./types";
+import type { Company, RankedCompanyRow, SignalRow } from "./types";
 
 export type DashboardData = {
   companies: Company[];
@@ -19,8 +19,8 @@ const ID_CHUNK = 150;
 type Filter = { column: string; ids: number[] };
 
 /**
- * PostgREST caps a response at 1000 rows, so every read is paged. signals and
- * decisions only ever grow, so they are filtered to the displayed companies
+ * PostgREST caps a response at 1000 rows, so every read is paged. signals
+ * only ever grows, so it is filtered to the displayed companies
  * instead of being read in full on every request.
  */
 async function fetchAll<T>(
@@ -96,13 +96,10 @@ export async function fetchDashboardData(): Promise<DashboardData> {
       lastRunTime(supabase),
     ]);
     const ids = companies.map((c) => c.company_id);
-    const [signals, decisions] = await Promise.all([
-      fetchForCompanies<SignalRow>(supabase, "signals", ids),
-      fetchForCompanies<DecisionRow>(supabase, "decisions", ids),
-    ]);
+    const signals = await fetchForCompanies<SignalRow>(supabase, "signals", ids);
 
     return {
-      companies: toCompanies(companies, signals, decisions).sort(
+      companies: toCompanies(companies, signals).sort(
         (a, b) => b.score - a.score
       ),
       lastUpdated,

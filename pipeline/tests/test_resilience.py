@@ -4,7 +4,7 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from src import config, extract, investigate, judge, main, resilience
+from src import config, extract, judge, main, resilience
 from src.models import Company, FeedItem
 
 
@@ -157,19 +157,6 @@ class IsolationTests(unittest.IsolatedAsyncioTestCase):
             eligible = await main._screen(companies)
         self.assertEqual([c.name for c in eligible], ["A", "C", "D", "E"])
         self.assertEqual(companies[1].failed_stage, "screen")
-
-    async def test_investigation_skips_already_failed_companies(self):
-        companies = [company(n) for n in "ABCD"]
-        companies[0].failed_stage = "judge"
-        seen = []
-
-        async def investigate_company(c, fetcher):
-            seen.append(c.name)
-
-        with patch.object(investigate, "investigate_company", investigate_company), \
-             patch.object(investigate, "judge_founders", AsyncMock()):
-            await investigate.investigate_all(companies)
-        self.assertEqual(sorted(seen), ["B", "C", "D"])
 
     def test_failed_stage_is_not_in_snapshots(self):
         c = company("A")

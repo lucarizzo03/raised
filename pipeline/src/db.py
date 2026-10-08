@@ -253,16 +253,6 @@ def persist_run(
                     (c.id, s.signal_type, s.value, s.confidence, s.needs_review,
                      s.source_url, s.detected_at),
                 )
-            for d in c.decisions:
-                conn.execute(
-                    """
-                    insert into decisions
-                        (company_id, question, answer, confidence, action_chosen, round, created_at)
-                    values (%s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (c.id, d.question, d.answer, d.confidence,
-                     d.action_chosen, d.round, d.created_at),
-                )
             if not write_scores or c.rejection_reason:
                 continue
             conn.execute(

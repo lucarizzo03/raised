@@ -107,8 +107,8 @@ class ProcessedArticleTests(unittest.IsolatedAsyncioTestCase):
              patch.object(main.db, "migrate"), patch.object(main.db, "exclude_aged_out"), \
              patch.object(main.db, "dashboard_summary", return_value={}), \
              patch.object(main.db, "persist_run", return_value={}) as persist, \
-             patch("src.judge.judge_new_round", AsyncMock()), patch("src.jobs.fetch_all_jobs", AsyncMock()), \
-             patch("src.judge.judge_all", side_effect=judge_all), patch("src.investigate.investigate_all", AsyncMock()), \
+             patch("src.judge.judge_new_round", AsyncMock()), patch("src.enrich.enrich_all", AsyncMock()), \
+             patch("src.judge.judge_all", side_effect=judge_all), \
              patch("src.judge.preflight", AsyncMock()), patch("src.llm.preflight", AsyncMock()), \
              patch("builtins.print"):
             await main.main(["run"])

@@ -81,9 +81,6 @@ MAX_STAGE_FAILURE_RATE = 0.25
 # many per company. A 348-role board was half of one run's classification calls.
 MAX_JOBS_CLASSIFIED_PER_COMPANY = 20
 
-# --- Investigation loop ----------------------------------------------------------
-MAX_INVESTIGATION_ROUNDS = 3
-
 # --- Scoring weights (plain code, no model calls) ---------------------------------
 SCORING_WEIGHTS = {
     "round_seed_to_b": 15,

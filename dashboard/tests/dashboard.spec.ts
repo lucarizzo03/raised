@@ -60,7 +60,6 @@ test("expands evidence, copies the draft, and toggles show all", async ({ page }
   const rows = page.locator('tbody tr[role="button"]');
   await rows.first().click();
   await expect(page.getByRole("heading", { name: "Why this score" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Investigation" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Draft email" })).toBeVisible();
   await page.getByRole("button", { name: "Copy", exact: true }).click();
   await expect(page.getByRole("button", { name: "Copied", exact: true })).toBeVisible();
